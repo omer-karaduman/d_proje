@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ring of the Middle Earth — Distributed Strategy Game</title>
+  <meta name="description" content="A browser-based distributed strategy game where Light Side escorts the Ring Bearer to Mount Doom while Dark Side hunts them down.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── Loading Screen ─────────────────────────────────────────────────────── -->
+<div id="loading-screen">
+  <div class="loading-content">
+    <div class="eye-of-sauron" id="eye-animation">
+      <div class="eye-outer"></div>
+      <div class="eye-inner"></div>
+      <div class="eye-pupil"></div>
+      <div class="eye-flame"></div>
+    </div>
+    <h1 class="loading-title">Ring of the Middle Earth</h1>
+    <p class="loading-sub">Connecting to the distributed realm...</p>
+    <div class="loading-bar"><div class="loading-fill" id="loading-fill"></div></div>
+  </div>
+</div>
+
+<!-- ── Login / Side Select Screen ────────────────────────────────────────── -->
+<div id="login-screen" class="hidden">
+  <div class="login-container">
+    <div class="login-header">
+      <div class="one-ring-symbol">💍</div>
+      <h1>Ring of the Middle Earth</h1>
+      <p class="subtitle">Distributed Strategy Game — Human vs Human</p>
+    </div>
+    <div class="side-select">
+      <div class="side-card" id="light-side-card" onclick="selectSide('FREE_PEOPLES')">
+        <div class="side-icon">🌟</div>
+        <h2>Light Side</h2>
+        <p class="side-name">The Free Peoples</p>
+        <ul class="side-powers">
+          <li>Control the Ring Bearer's route</li>
+          <li>Escort with Fellowship Guards</li>
+          <li>See Ring Bearer's true position</li>
+          <li>Use Gandalf's OpenPath ability</li>
+        </ul>
+        <div class="side-goal">Goal: Reach Mount Doom</div>
+      </div>
+      <div class="side-divider"><span>VS</span></div>
+      <div class="side-card dark" id="dark-side-card" onclick="selectSide('SHADOW')">
+        <div class="side-icon">👁️</div>
+        <h2>Dark Side</h2>
+        <p class="side-name">The Shadow</p>
+        <ul class="side-powers">
+          <li>Hunt the Ring Bearer</li>
+          <li>Block paths with Nazgul</li>
+          <li>Raise surveillance levels</li>
+          <li>Use Saruman's CorruptPath ability</li>
+        </ul>
+        <div class="side-goal">Goal: Find & Capture the Bearer</div>
+      </div>
+    </div>
+    <div class="player-id-section">
+      <label>Player ID: <input type="text" id="player-id-input" placeholder="Enter your name" maxlength="20"></label>
+      <button id="join-btn" onclick="joinGame()" class="btn-primary" disabled>Enter the Realm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main Game Screen ───────────────────────────────────────────────────── -->
+<div id="game-screen" class="hidden">
+
+  <!-- Top Bar -->
+  <header class="game-header">
+    <div class="header-left">
+      <div class="turn-display">
+        <span class="turn-label">Turn</span>
+        <span class="turn-number" id="turn-number">1</span>
+        <span class="turn-total" id="turn-total">/40</span>
+      </div>
+      <div class="timer-display">
+        <div class="timer-ring" id="timer-ring">
+          <svg viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#333" stroke-width="2"/>
+            <circle cx="18" cy="18" r="15.9" fill="none" stroke="#c9a84c" stroke-width="2"
+              stroke-dasharray="100 100" stroke-dashoffset="0" id="timer-arc"
+              transform="rotate(-90 18 18)"/>
+          </svg>
+          <span id="timer-text">60</span>
+        </div>
+        <span class="timer-label">Turn Timer</span>
+      </div>
+    </div>
+    <div class="header-center">
+      <h1 class="game-title">Ring of the Middle Earth</h1>
+      <div class="side-badge" id="side-badge">⚔️ The Free Peoples</div>
+    </div>
+    <div class="header-right">
+      <div class="status-panel">
+        <div class="status-item" id="connection-status">
+          <span class="status-dot connected"></span>
+          <span>Connected</span>
+        </div>
+        <div id="rb-location" class="status-item hidden">
+          🌍 <span id="rb-location-text">The Shire</span>
+        </div>
+        <div id="detection-status" class="status-item hidden dark-status">
+          👁️ <span id="detection-text">Searching...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="game-main">
+
+    <!-- Left Panel: Units -->
+    <aside class="units-panel">
+      <h2 class="panel-title">⚔️ Units</h2>
+      <div id="units-list" class="units-list"></div>
+    </aside>
+
+    <!-- Center: Map -->
+    <div class="map-container">
+      <div class="map-wrapper">
+        <canvas id="game-map" width="900" height="620"></canvas>
+        <div id="map-tooltip" class="map-tooltip hidden"></div>
+      </div>
+      <!-- Order Input Panel -->
+      <div id="order-panel" class="order-panel hidden">
+        <h3 id="order-panel-title">Issue Order</h3>
+        <div id="order-content"></div>
+        <div class="order-buttons">
+          <button class="btn-primary" id="submit-order-btn">Submit Order</button>
+          <button class="btn-secondary" onclick="closeOrderPanel()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Panel: Events & Analysis -->
+    <aside class="right-panel">
+      <!-- Analysis Panel -->
+      <div class="analysis-panel" id="analysis-panel">
+        <h2 class="panel-title" id="analysis-title">📊 Analysis</h2>
+        <div id="analysis-content">
+          <button class="btn-analysis" onclick="requestAnalysis()">🔍 Refresh Analysis</button>
+          <div id="analysis-results"></div>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="event-log-panel">
+        <h2 class="panel-title">📜 Event Log</h2>
+        <div id="event-log" class="event-log"></div>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Bottom: Path Info -->
+  <div class="path-info-bar" id="path-info-bar">
+    <span class="path-info-text">Click a region or path to view details and available orders</span>
+  </div>
+
+  <!-- Win/Lose Overlay -->
+  <div id="game-over-overlay" class="game-over-overlay hidden">
+    <div class="game-over-content">
+      <div class="game-over-icon" id="game-over-icon">💍</div>
+      <h1 id="game-over-title">Game Over</h1>
+      <p id="game-over-subtitle"></p>
+      <div id="game-over-cause"></div>
+      <button class="btn-primary" onclick="resetGame()">Play Again</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Toast Notifications ────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
