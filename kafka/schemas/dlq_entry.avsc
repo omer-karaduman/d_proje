@@ -1,0 +1,15 @@
+{
+  "type": "record",
+  "name": "DLQEntry",
+  "namespace": "middleearth.game",
+  "fields": [
+    {"name": "originalTopic", "type": "string"},
+    {"name": "partition", "type": "int"},
+    {"name": "offset", "type": "long"},
+    {"name": "errorCode", "type": "string"},
+    {"name": "errorMessage", "type": "string"},
+    {"name": "rawPayload", "type": "bytes"},
+    {"name": "unitId", "type": ["null", "string"], "default": null},
+    {"name": "timestamp", "type": "long"}
+  ]
+}

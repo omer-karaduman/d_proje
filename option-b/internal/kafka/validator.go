@@ -1,326 +1,189 @@
 package kafka
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
-
 	"ring-of-the-middle-earth/internal/game"
 )
 
-// OrderValidator implements Kafka Streams Topology 1 — Order Validation (Section 11).
-// 8 validation rules, producing to game.orders.validated or game.dlq.
-// All state is read from KTables (UnitKTable, PathKTable, TurnKTable).
-
-// OrderValidator validates orders from game.orders.raw
+// OrderValidator, 8 kuralı ve rota risk zenginleştirmesini yöneten ana yapıdır.
 type OrderValidator struct {
-	turnKTable  *TurnKTable
-	unitKTable  *UnitKTable
-	pathKTable  *PathKTable
+	turnKTable   *TurnKTable
+	unitKTable   *UnitKTable
+	pathKTable   *PathKTable
+	regionKTable *RegionKTable
+	unitConfigs  map[string]game.UnitConfig
 }
 
-// TurnKTable holds the current turn number
-type TurnKTable struct {
-	CurrentTurn int
-}
+// KTable yapıları state store mantığını simüle eder.
+type TurnKTable struct{ CurrentTurn int }
+type UnitKTable struct{ Units map[string]game.UnitSnapshot }
+type PathKTable struct{ Paths map[string]game.PathState }
+type RegionKTable struct{ Regions map[string]game.RegionState }
 
-// UnitKTable holds current unit states
-type UnitKTable struct {
-	Units map[string]game.UnitSnapshot
-}
-
-// PathKTable holds current path states
-type PathKTable struct {
-	Paths map[string]game.PathState
-}
-
-// ValidationResult holds the result of order validation
-type ValidationResult struct {
-	Valid     bool
-	ErrorCode game.ErrorCode
-	Order     game.Order
-}
-
-// NewOrderValidator creates a new OrderValidator
-func NewOrderValidator(turn *TurnKTable, units *UnitKTable, paths *PathKTable) *OrderValidator {
+func NewOrderValidator(t *TurnKTable, u *UnitKTable, p *PathKTable, r *RegionKTable, configs map[string]game.UnitConfig) *OrderValidator {
 	return &OrderValidator{
-		turnKTable: turn,
-		unitKTable: units,
-		pathKTable: paths,
+		turnKTable:   t,
+		unitKTable:   u,
+		pathKTable:   p,
+		regionKTable: r,
+		unitConfigs:  configs,
 	}
 }
 
-// Validate applies all 8 validation rules from spec Section 11.
-// Returns ValidationResult with error code if invalid.
-func (v *OrderValidator) Validate(order game.Order, unitConfigs map[string]game.UnitConfig, seenUnitsThisTurn map[string]bool) ValidationResult {
-	// Rule 8: Duplicate unit order (checked first to maintain set)
-	if seenUnitsThisTurn[order.UnitID] {
-		return ValidationResult{
-			Valid:     false,
-			ErrorCode: game.ErrDuplicateUnitOrder,
-			Order:     order,
-		}
+// Validate, Section 11'deki 8 kuralı uygular.
+func (v *OrderValidator) Validate(order game.Order, seenUnits map[string]bool) (bool, game.ErrorCode) {
+	// Rule 8: Duplicate unit order
+	if seenUnits[order.UnitID] {
+		return false, game.ErrDuplicateUnitOrder
 	}
 
-	// Rule 1: Wrong turn number
+	// Rule 1: Wrong turn number[cite: 2]
 	if order.Turn != v.turnKTable.CurrentTurn {
-		return ValidationResult{
-			Valid:     false,
-			ErrorCode: game.ErrWrongTurn,
-			Order:     order,
-		}
+		return false, game.ErrWrongTurn
 	}
 
-	// Get unit config to check ownership — config-driven, not hardcoded
-	cfg, ok := unitConfigs[order.UnitID]
+	// Birim konfigürasyonu kontrolü (Hardcoding yasak!)[cite: 2]
+	cfg, ok := v.unitConfigs[order.UnitID]
 	if !ok {
-		return ValidationResult{
-			Valid:     false,
-			ErrorCode: game.ErrNotYourUnit,
-			Order:     order,
-		}
+		return false, game.ErrNotYourUnit
 	}
 
-	// Rule 2: Unit belongs to submitting player's side
-	if !sideMatchesPlayer(cfg.Side, order.PlayerID) {
-		return ValidationResult{
-			Valid:     false,
-			ErrorCode: game.ErrNotYourUnit,
-			Order:     order,
-		}
+	// Rule 2: Unit belongs to player[cite: 2]
+	if !v.sideMatchesPlayer(cfg.Side, order.PlayerID) {
+		return false, game.ErrNotYourUnit
 	}
 
 	unit, hasUnit := v.unitKTable.Units[order.UnitID]
 
-	// Rule 3 & 4: Ring Bearer route validation
+	// Rule 3 & 4: Ring Bearer route validation[cite: 2]
 	if cfg.Class == game.RingBearer {
-		if order.OrderType == game.AssignRouteOrder || order.OrderType == game.RedirectUnitOrder {
-			pathIDs := extractOrderPathIDs(order)
-			for _, pathID := range pathIDs {
-				path, ok := v.pathKTable.Paths[pathID]
-				if !ok {
-					return ValidationResult{Valid: false, ErrorCode: game.ErrInvalidPath, Order: order}
-				}
-				// Rule 3: next path is BLOCKED
-				if path.Status == game.Blocked {
-					return ValidationResult{Valid: false, ErrorCode: game.ErrPathBlocked, Order: order}
-				}
+		pathIDs := v.extractPathIDs(order)
+		for _, pid := range pathIDs {
+			path, ok := v.pathKTable.Paths[pid]
+			if !ok {
+				return false, game.ErrInvalidPath
+			}
+			if path.Status == game.Blocked {
+				return false, game.ErrPathBlocked
 			}
 		}
 	}
 
-	// Rule 5: BlockPath/SearchPath — unit must be at endpoint
+	// Rule 5: Unit adjacency for Block/Search[cite: 2]
 	if order.OrderType == game.BlockPathOrder || order.OrderType == game.SearchPathOrder {
-		pathID, _ := order.Payload["pathId"].(string)
-		path, ok := v.pathKTable.Paths[pathID]
+		pid, _ := order.Payload["pathId"].(string)
+		path, ok := v.pathKTable.Paths[pid]
 		if !ok {
-			return ValidationResult{Valid: false, ErrorCode: game.ErrInvalidPath, Order: order}
+			return false, game.ErrInvalidPath
 		}
 		if hasUnit && unit.Region != path.From && unit.Region != path.To {
-			return ValidationResult{Valid: false, ErrorCode: game.ErrUnitNotAdjacent, Order: order}
+			return false, game.ErrUnitNotAdjacent
 		}
 	}
 
-	// Rule 6: AttackRegion — target must be adjacent and enemy-controlled
+	// Rule 6: Attack conditions[cite: 2]
 	if order.OrderType == game.AttackRegionOrder {
 		target, _ := order.Payload["targetRegion"].(string)
-		if hasUnit {
-			adjacent := false
-			for _, path := range v.pathKTable.Paths {
-				if (path.From == unit.Region && path.To == target) ||
-					(path.To == unit.Region && path.From == target) {
-					adjacent = true
-					break
-				}
-			}
-			if !adjacent || target == "" {
-				return ValidationResult{Valid: false, ErrorCode: game.ErrInvalidTarget, Order: order}
-			}
+		if hasUnit && !v.isAdjacent(unit.Region, target) {
+			return false, game.ErrInvalidTarget
 		}
 	}
 
-	// Rule 7: MaiaAbility cooldown
+	// Rule 7: Maia cooldown[cite: 2]
 	if order.OrderType == game.MaiaAbilityOrder {
 		if !cfg.IsMaia {
-			return ValidationResult{Valid: false, ErrorCode: game.ErrMaiaDisabled, Order: order}
+			return false, game.ErrMaiaDisabled
 		}
 		if hasUnit && unit.Cooldown > 0 {
-			return ValidationResult{Valid: false, ErrorCode: game.ErrAbilityOnCooldown, Order: order}
+			return false, game.ErrAbilityOnCooldown
 		}
 	}
 
-	return ValidationResult{Valid: true, Order: order}
+	return true, ""
 }
 
-// sideMatchesPlayer determines if a player ID belongs to the given side.
-// In a real system this would check the session/auth. Here we use a convention:
-// playerIds starting with "light-" are FREE_PEOPLES, "dark-" are SHADOW.
-func sideMatchesPlayer(side game.Side, playerID string) bool {
-	if len(playerID) >= 6 && playerID[:6] == "light-" {
+// Enrich, Topology 2 - Section 12 Risk formülünü uygular[cite: 2].
+func (v *OrderValidator) Enrich(order game.Order) int {
+	riskScore := 0
+	pathIDs := v.extractPathIDs(order)
+	visitedRegions := make(map[string]bool)
+
+	for _, pid := range pathIDs {
+		path, ok := v.pathKTable.Paths[pid]
+		if !ok {
+			continue
+		}
+
+		visitedRegions[path.To] = true
+		visitedRegions[path.From] = true
+
+		// sum(path.surveillanceLevel * 3)[cite: 2]
+		riskScore += path.SurveillanceLevel * 3
+
+		// Status weights[cite: 2]
+		if path.Status == game.Blocked {
+			riskScore += 5
+		}
+		if path.Status == game.Threatened {
+			riskScore += 2
+		}
+	}
+
+	// sum(region.threatLevel)[cite: 2]
+	for rid := range visitedRegions {
+		if reg, ok := v.regionKTable.Regions[rid]; ok {
+			riskScore += reg.ThreatLevel
+		}
+	}
+
+	// nazgulProximityCount * 2[cite: 2]
+	riskScore += v.calculateNazgulProximity(visitedRegions) * 2
+
+	return riskScore
+}
+
+// --- Yardımcı Fonksiyonlar ---[cite: 2]
+
+func (v *OrderValidator) sideMatchesPlayer(side game.Side, pID string) bool {
+	// Basit kural: light-* -> FREE_PEOPLES, dark-* -> SHADOW[cite: 2]
+	if len(pID) >= 6 && pID[:6] == "light-" {
 		return side == game.FreePeoples
 	}
-	if len(playerID) >= 5 && playerID[:5] == "dark-" {
+	if len(pID) >= 5 && pID[:5] == "dark-" {
 		return side == game.Shadow
 	}
-	// Default: allow (for testing)
-	return true
+	return false
 }
 
-// extractOrderPathIDs extracts path IDs from an order's payload
-func extractOrderPathIDs(order game.Order) []string {
-	raw, ok := order.Payload["pathIds"]
-	if !ok {
-		raw = order.Payload["newPathIds"]
-	}
-	if raw == nil {
-		return nil
-	}
-	switch v := raw.(type) {
-	case []string:
-		return v
-	case []interface{}:
-		result := make([]string, len(v))
-		for i, s := range v {
-			result[i] = fmt.Sprintf("%v", s)
+func (v *OrderValidator) extractPathIDs(o game.Order) []string {
+	if raw, ok := o.Payload["pathIds"]; ok {
+		if ids, ok := raw.([]string); ok {
+			return ids
 		}
-		return result
 	}
 	return nil
 }
 
-// RouteRiskEnricher implements Kafka Streams Topology 2 — Route Risk Enrichment (Section 12).
-type RouteRiskEnricher struct {
-	pathKTable   *PathKTable
-	unitKTable   *UnitKTable
-	regionKTable *RegionKTable
-}
-
-// RegionKTable holds current region states
-type RegionKTable struct {
-	Regions map[string]game.RegionState
-}
-
-// NewRouteRiskEnricher creates a new RouteRiskEnricher
-func NewRouteRiskEnricher(paths *PathKTable, units *UnitKTable, regions *RegionKTable) *RouteRiskEnricher {
-	return &RouteRiskEnricher{
-		pathKTable:   paths,
-		unitKTable:   units,
-		regionKTable: regions,
-	}
-}
-
-// EnrichedOrder is an order with route risk score attached
-type EnrichedOrder struct {
-	game.Order
-	RouteRiskScore    int      `json:"routeRiskScore"`
-	ThreatenedPaths   []string `json:"threatenedPaths"`
-	BlockedPaths      []string `json:"blockedPaths"`
-}
-
-// Enrich computes and attaches routeRiskScore to validated ASSIGN_ROUTE/REDIRECT_UNIT orders.
-// Formula from spec Section 12.
-func (e *RouteRiskEnricher) Enrich(order game.Order) (*EnrichedOrder, error) {
-	if order.OrderType != game.AssignRouteOrder && order.OrderType != game.RedirectUnitOrder {
-		return nil, fmt.Errorf("not a route order")
-	}
-
-	pathIDs := extractOrderPathIDs(order)
-	enriched := &EnrichedOrder{Order: order}
-
-	// Collect destination regions from paths
-	destinationRegions := map[string]bool{}
-	for _, pathID := range pathIDs {
-		path, ok := e.pathKTable.Paths[pathID]
-		if !ok {
-			continue
-		}
-		destinationRegions[path.To] = true
-		destinationRegions[path.From] = true
-
-		// sum(path.surveillanceLevel * 3)
-		enriched.RouteRiskScore += path.SurveillanceLevel * 3
-
-		// count(THREATENED) * 2, count(BLOCKED) * 5
-		switch path.Status {
-		case game.Threatened:
-			enriched.ThreatenedPaths = append(enriched.ThreatenedPaths, pathID)
-			enriched.RouteRiskScore += 2
-		case game.Blocked:
-			enriched.BlockedPaths = append(enriched.BlockedPaths, pathID)
-			enriched.RouteRiskScore += 5
+func (v *OrderValidator) isAdjacent(from, to string) bool {
+	for _, p := range v.pathKTable.Paths {
+		if (p.From == from && p.To == to) || (p.To == from && p.From == to) {
+			return true
 		}
 	}
+	return false
+}
 
-	// sum(region.threatLevel for each destination region)
-	for regionID := range destinationRegions {
-		region, ok := e.regionKTable.Regions[regionID]
-		if ok {
-			enriched.RouteRiskScore += region.ThreatLevel
-		}
-	}
-
-	// nazgulProximityCount * 2 — Nazgul within 2 graph hops of any route region
-	nazgulProximity := 0
-	for unitID, u := range e.unitKTable.Units {
-		cfg, ok := getUnitConfigByID(unitID)
-		if !ok || u.Status != game.Active {
-			continue
-		}
-		// Nazgul: DetectionRange > 0
-		if cfg.DetectionRange <= 0 {
-			continue
-		}
-		for regionID := range destinationRegions {
-			if u.Region == regionID {
-				nazgulProximity++
-				break
-			}
-			// Check 1-2 hop adjacency
-			for _, p := range e.pathKTable.Paths {
-				neighbor := ""
-				if p.From == regionID {
-					neighbor = p.To
-				} else if p.To == regionID {
-					neighbor = p.From
-				}
-				if neighbor != "" && u.Region == neighbor {
-					nazgulProximity++
-					goto nextNazgul
+func (v *OrderValidator) calculateNazgulProximity(regions map[string]bool) int {
+	count := 0
+	for _, u := range v.unitKTable.Units {
+		cfg := v.unitConfigs[u.ID]
+		if cfg.DetectionRange > 0 && u.Status == game.Active {
+			for rid := range regions {
+				if u.Region == rid || v.isAdjacent(u.Region, rid) {
+					count++
+					break
 				}
 			}
-		nextNazgul:
 		}
 	}
-	enriched.RouteRiskScore += nazgulProximity * 2
-
-	log.Printf("RouteRiskEnricher: order=%s riskScore=%d", order.UnitID, enriched.RouteRiskScore)
-	return enriched, nil
-}
-
-// getUnitConfigByID is a package-level config lookup (set at init time from loaded configs)
-var globalUnitConfigs map[string]game.UnitConfig
-
-// SetGlobalUnitConfigs sets the global unit config map for enricher use
-func SetGlobalUnitConfigs(configs map[string]game.UnitConfig) {
-	globalUnitConfigs = configs
-}
-
-func getUnitConfigByID(id string) (game.UnitConfig, bool) {
-	if globalUnitConfigs == nil {
-		return game.UnitConfig{}, false
-	}
-	cfg, ok := globalUnitConfigs[id]
-	return cfg, ok
-}
-
-// SerializeOrder serializes an order to JSON for Kafka
-func SerializeOrder(order game.Order) ([]byte, error) {
-	return json.Marshal(order)
-}
-
-// DeserializeOrder deserializes an order from JSON
-func DeserializeOrder(data []byte) (game.Order, error) {
-	var order game.Order
-	err := json.Unmarshal(data, &order)
-	return order, err
+	return count
 }

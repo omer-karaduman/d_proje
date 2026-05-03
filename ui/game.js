@@ -1,6 +1,6 @@
 /* ============================================================
-   Ring of the Middle Earth — game.js  (Part 1/4)
-   Constants · State · Map Data · Init
+   Ring of the Middle Earth — game.js  (Parts 1-4)
+   Constants · State · Map Data · Init · SSE · Map · Orders
    ============================================================ */
 
 'use strict';

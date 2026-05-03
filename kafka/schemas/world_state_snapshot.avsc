@@ -1,0 +1,40 @@
+{
+  "type": "record",
+  "name": "WorldStateSnapshot",
+  "namespace": "middleearth.game",
+  "fields": [
+    {
+      "name": "units",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "UnitState",
+          "fields": [
+            {"name": "id", "type": "string"},
+            {"name": "region", "type": "string"},
+            {"name": "strength", "type": "int"},
+            {"name": "status", "type": "string"}
+          ]
+        }
+      }
+    },
+    {
+      "name": "regions",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "RegionState",
+          "fields": [
+            {"name": "id", "type": "string"},
+            {"name": "controlledBy", "type": "string"},
+            {"name": "fortified", "type": "boolean"}
+          ]
+        }
+      }
+    },
+    {"name": "turn", "type": "int"},
+    {"name": "timestamp", "type": "long"}
+  ]
+}
