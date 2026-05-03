@@ -47,11 +47,12 @@ func (cm *CacheManager) UpdateCh() <-chan game.WorldStateCache {
 // between goroutines (spec: "sends value copies to workers — never pointers")
 func deepCopyCache(src game.WorldStateCache) game.WorldStateCache {
 	dst := game.WorldStateCache{
-		Turn:        src.Turn,
-		UnitConfigs: src.UnitConfigs, // read-only after startup, safe to share
-		Session:     src.Session,
-		LightView:   src.LightView,
-		DarkView:    src.DarkView,
+		Turn:          src.Turn,
+		TurnStartedAt: src.TurnStartedAt,
+		UnitConfigs:   src.UnitConfigs, // read-only after startup, safe to share
+		Session:       src.Session,
+		LightView:     src.LightView,
+		DarkView:      src.DarkView,
 	}
 
 	// Deep copy Units

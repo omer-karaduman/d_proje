@@ -66,7 +66,7 @@ func NewTurnProcessor(
 // Run starts the turn processor goroutine
 func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 	defer wg.Done()
-	ticker := time.NewTicker(time.Duration(tp.session.TurnDuration) * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -93,7 +93,16 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 				log.Println("TurnProcessor: game over, stopping turn loop")
 				return
 			}
-			tp.processTurn()
+			
+			state := tp.cache.GetSnapshot()
+			if state.Session.Phase != game.InProgress {
+				continue
+			}
+			
+			elapsed := time.Now().Unix() - state.TurnStartedAt
+			if elapsed >= int64(tp.session.TurnDuration) {
+				tp.processTurn()
+			}
 		}
 	}
 }

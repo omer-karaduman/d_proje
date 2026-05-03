@@ -82,6 +82,13 @@ func (h *Handler) StartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.session.Phase = game.InProgress
+	
+	// Reset the timer when the game starts
+	state := h.cache.GetSnapshot()
+	state.Session.Phase = game.InProgress
+	state.TurnStartedAt = time.Now().Unix()
+	h.cache.Update(state)
+	
 	respondJSON(w, http.StatusOK, map[string]string{"status": "started", "mode": req.Mode})
 }
 
