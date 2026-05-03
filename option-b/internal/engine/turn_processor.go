@@ -15,15 +15,17 @@ import (
 
 // TurnProcessor manages turn-by-turn game state processing
 type TurnProcessor struct {
-	cache         *CacheManager
-	engineCh      <-chan ValidatedOrder
-	producerCh    chan<- GameEvent
-	graph         *game.Graph
-	session       *game.GameSession
-	ringBearer    *game.RingBearerState
-	unitConfigs   map[string]game.UnitConfig
-	ordersThisTurn map[string]game.Order // unitID -> order (for duplicate detection)
-	mu            sync.Mutex
+	cache          *CacheManager
+	engineCh       <-chan ValidatedOrder
+	producerCh     chan<- GameEvent
+	graph          *game.Graph
+	session        *game.GameSession
+	ringBearer     *game.RingBearerState
+	unitConfigs    map[string]game.UnitConfig
+	ordersThisTurn map[string]game.Order
+	pipeline2      *Pipeline2
+	mu             sync.Mutex
+	gameOver       bool // set true after win condition fires; stops processing
 }
 
 // ValidatedOrder represents an order that passed Topology 1 validation
@@ -46,6 +48,7 @@ func NewTurnProcessor(
 	graph *game.Graph,
 	session *game.GameSession,
 	unitConfigs map[string]game.UnitConfig,
+	p2 *Pipeline2,
 ) *TurnProcessor {
 	return &TurnProcessor{
 		cache:          cache,
@@ -56,6 +59,7 @@ func NewTurnProcessor(
 		ringBearer:     &game.RingBearerState{TrueRegion: "the-shire"},
 		unitConfigs:    unitConfigs,
 		ordersThisTurn: make(map[string]game.Order),
+		pipeline2:      p2,
 	}
 }
 
@@ -75,11 +79,20 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 			if !ok {
 				return
 			}
+			if tp.gameOver {
+				continue // drop orders once game is over
+			}
 			tp.mu.Lock()
 			tp.ordersThisTurn[order.Order.UnitID] = order.Order
 			tp.mu.Unlock()
 
 		case <-ticker.C:
+			if tp.gameOver {
+				// Game is already over — stop the ticker and exit
+				ticker.Stop()
+				log.Println("TurnProcessor: game over, stopping turn loop")
+				return
+			}
 			tp.processTurn()
 		}
 	}
@@ -94,6 +107,9 @@ func (tp *TurnProcessor) processTurn() {
 
 	state := tp.cache.GetSnapshot()
 	turn := state.Turn
+
+	// Record when this turn started — used by clients to sync their countdown timer
+	state.TurnStartedAt = time.Now().Unix()
 
 	log.Printf("TurnProcessor: processing turn %d with %d orders", turn, len(orders))
 
@@ -132,11 +148,13 @@ func (tp *TurnProcessor) processTurn() {
 	// Step 12: Run detection check
 	state = tp.stepDetection(state, turn)
 
-	// Step 13: Evaluate win conditions
-	gameOver, result := tp.stepWinConditions(state, turn)
+	// Step 13: Evaluate win conditions (pass orders for DestroyRing check)
+	isGameOver, result := tp.stepWinConditions(state, orders, turn)
 
-	// Advance turn
-	state.Turn = turn + 1
+	// Advance turn only if game is still running
+	if !isGameOver {
+		state.Turn = turn + 1
+	}
 
 	// Update cache
 	tp.cache.Update(state)
@@ -144,8 +162,10 @@ func (tp *TurnProcessor) processTurn() {
 	// Emit WorldStateSnapshot
 	tp.emitWorldStateSnapshot(state)
 
-	if gameOver {
+	if isGameOver {
+		tp.gameOver = true // prevent further processing
 		tp.emitGameOver(result, turn)
+		log.Printf("TurnProcessor: game ended at turn %d", turn)
 	}
 }
 
@@ -252,16 +272,29 @@ func (tp *TurnProcessor) stepReinforce(state game.WorldStateCache, orders map[st
 		switch order.OrderType {
 		case game.ReinforceRegionOrder:
 			target, _ := order.Payload["targetRegion"].(string)
-			if _, ok := state.Regions[target]; ok {
-				unit.Region = target
-				state.Units[unitID] = unit
+			if _, ok := state.Regions[target]; !ok {
+				continue
 			}
+			// Adjacency check: unit must be at an endpoint of a path leading to target
+			if target != unit.Region && !tp.graph.AreAdjacent(unit.Region, target) {
+				log.Printf("TurnProcessor: REINFORCE rejected — %s not adjacent to %s", unit.Region, target)
+				continue
+			}
+			unit.Region = target
+			state.Units[unitID] = unit
+			tp.emit("game.events.unit", map[string]interface{}{
+				"event":  "UnitMoved",
+				"unitId": unitID,
+				"to":     target,
+			})
 		case game.DeployNazgulOrder:
 			target, _ := order.Payload["targetRegion"].(string)
-			if _, ok := state.Regions[target]; ok {
-				unit.Region = target
-				state.Units[unitID] = unit
+			if _, ok := state.Regions[target]; !ok {
+				continue
 			}
+			// Nazgul can deploy to any reachable region (flying — no adjacency limit)
+			unit.Region = target
+			state.Units[unitID] = unit
 		}
 	}
 	return state
@@ -312,6 +345,10 @@ func (tp *TurnProcessor) stepMaiaAbilities(state game.WorldStateCache, orders ma
 		}
 
 		targetPathID, _ := order.Payload["targetPathId"].(string)
+		if targetPathID == "" {
+			// Frontend sends "pathId"; accept both keys for compatibility
+			targetPathID, _ = order.Payload["pathId"].(string)
+		}
 		path, ok := state.Paths[targetPathID]
 		if !ok {
 			continue
@@ -391,13 +428,31 @@ func (tp *TurnProcessor) stepAutoAdvance(state game.WorldStateCache, turn int) g
 			continue
 		}
 
+		// Determine source region.
+		// IMPORTANT: Ring Bearer's unit.Region is always "" for info hiding.
+		// Use the internal TrueRegion tracker for movement direction.
+		var fromRegion string
+		if cfg.Class == game.RingBearer {
+			fromRegion = tp.ringBearer.TrueRegion // authoritative secret position
+			if fromRegion == "" {
+				// Fallback: read from LightView (set at initialisation)
+				fromRegion = state.LightView.RingBearerRegion
+			}
+		} else {
+			fromRegion = unit.Region
+		}
+
 		// Determine destination region
-		fromRegion := unit.Region
 		toRegion := ""
 		if path.From == fromRegion {
 			toRegion = path.To
-		} else {
+		} else if path.To == fromRegion {
 			toRegion = path.From
+		} else {
+			// Unit is not at either endpoint of this path — skip this step
+			log.Printf("TurnProcessor: %s is not at endpoint of path %s (at=%q from=%q to=%q), skipping",
+				unitID, pathID, fromRegion, path.From, path.To)
+			continue
 		}
 
 		// Move the unit
@@ -409,6 +464,8 @@ func (tp *TurnProcessor) stepAutoAdvance(state game.WorldStateCache, turn int) g
 			// Update ring bearer secret state
 			tp.ringBearer.TrueRegion = toRegion
 			tp.ringBearer.RouteIdx = unit.RouteIdx
+			// Keep LightView in sync so /game/state always returns correct position
+			state.LightView.RingBearerRegion = toRegion
 
 			// Check surveillance exposure
 			if game.CheckRingBearerExposedByPath(path, turn, state.Session.HiddenUntil) {
@@ -461,6 +518,18 @@ func (tp *TurnProcessor) stepCombat(state game.WorldStateCache, orders map[strin
 			continue
 		}
 		target, _ := order.Payload["targetRegion"].(string)
+		if target == "" {
+			continue
+		}
+		// Check attacker adjacency: must be at or adjacent to target region
+		attackerUnit, unitOK := state.Units[unitID]
+		if !unitOK || attackerUnit.Status != game.Active {
+			continue
+		}
+		if attackerUnit.Region != target && !tp.graph.AreAdjacent(attackerUnit.Region, target) {
+			log.Printf("TurnProcessor: ATTACK rejected — %s (%s) not adjacent to %s", unitID, attackerUnit.Region, target)
+			continue
+		}
 		attacksByRegion[target] = append(attacksByRegion[target], unitID)
 	}
 
@@ -674,6 +743,11 @@ func (tp *TurnProcessor) stepDetection(state game.WorldStateCache, turn int) gam
 			"regionId": result.TrueRegion,
 			"turn":     turn,
 		})
+		
+		// Trigger Interception Analysis (Pipeline 2) asynchronously per spec
+		if tp.pipeline2 != nil {
+			tp.pipeline2.TriggerAsync(state, result.TrueRegion)
+		}
 	}
 
 	// Reset exposed at end of turn
@@ -683,22 +757,37 @@ func (tp *TurnProcessor) stepDetection(state game.WorldStateCache, turn int) gam
 }
 
 // stepWinConditions evaluates win/draw conditions
-func (tp *TurnProcessor) stepWinConditions(state game.WorldStateCache, turn int) (bool, map[string]interface{}) {
+// Spec 1.2: Light Side wins ONLY if DestroyRing order was submitted this turn.
+func (tp *TurnProcessor) stepWinConditions(state game.WorldStateCache, orders map[string]game.Order, turn int) (bool, map[string]interface{}) {
 	// Light Side wins: Ring Bearer at mount-doom + DestroyRing submitted + no Dark Side unit at mount-doom
 	if tp.ringBearer.TrueRegion == "mount-doom" {
-		darkSideAtMountDoom := false
-		for unitID, u := range state.Units {
-			cfg := tp.unitConfigs[unitID]
-			if cfg.Side == game.Shadow && u.Status == game.Active && u.Region == "mount-doom" {
-				darkSideAtMountDoom = true
+		// Check that DESTROY_RING order was submitted this turn
+		destroyRingSubmitted := false
+		for _, o := range orders {
+			if o.OrderType == game.DestroyRingOrder {
+				destroyRingSubmitted = true
 				break
 			}
 		}
-		if !darkSideAtMountDoom {
-			return true, map[string]interface{}{
-				"winner": "LIGHT_SIDE",
-				"cause":  "RING_DESTROYED",
-				"turn":   turn,
+		if !destroyRingSubmitted {
+			log.Printf("TurnProcessor: Ring Bearer at mount-doom but DESTROY_RING not submitted")
+		}
+
+		if destroyRingSubmitted {
+			darkSideAtMountDoom := false
+			for unitID, u := range state.Units {
+				cfg := tp.unitConfigs[unitID]
+				if cfg.Side == game.Shadow && u.Status == game.Active && u.Region == "mount-doom" {
+					darkSideAtMountDoom = true
+					break
+				}
+			}
+			if !darkSideAtMountDoom {
+				return true, map[string]interface{}{
+					"winner": "LIGHT_SIDE",
+					"cause":  "RING_DESTROYED",
+					"turn":   turn,
+				}
 			}
 		}
 	}
@@ -746,19 +835,25 @@ func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 	for id, u := range state.Units {
 		cfg := tp.unitConfigs[id]
 		if cfg.Class == game.RingBearer {
-			u.Region = "" // enforce information hiding
+			u.Region = "" // enforce information hiding in public state
 		}
 		publicUnits[id] = u
 	}
 
+	// Include ringBearerRegion (Light Side sees true region; stripRingBearer removes it for Dark Side)
 	tp.emit("game.broadcast", map[string]interface{}{
-		"event":   "WorldStateSnapshot",
-		"turn":    state.Turn,
-		"units":   publicUnits,
-		"regions": state.Regions,
-		"paths":   state.Paths,
+		"event":             "WorldStateSnapshot",
+		"turn":              state.Turn,
+		"units":             publicUnits,
+		"regions":           state.Regions,
+		"paths":             state.Paths,
+		"turnStartedAt":     state.TurnStartedAt,
+		"turnDurationSec":   int(tp.session.TurnDuration),
+		"turnRemainingSec":  int(tp.session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
+		"ringBearerRegion":  tp.ringBearer.TrueRegion, // Light Side only; stripped for Dark Side
 	})
 }
+
 
 // emitGameOver emits GameOver with exactly-once semantics
 func (tp *TurnProcessor) emitGameOver(result map[string]interface{}, turn int) {

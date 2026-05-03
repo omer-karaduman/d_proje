@@ -92,45 +92,42 @@ func (er *EventRouter) RouteEvent(topic string, payload []byte) {
 	}
 }
 
-// stripRingBearer removes the Ring Bearer's true region from a WorldStateSnapshot.
-// DarkView.RingBearerRegion is ALWAYS "" after this function.
-// This is tested by router_test.go with go test -race.
+// stripRingBearer removes ONLY the Ring Bearer's true region from a WorldStateSnapshot.
+// All other units' regions are preserved. This is the SINGLE enforcement point.
 func stripRingBearer(payload []byte) string {
 	var data map[string]interface{}
 	if err := json.Unmarshal(payload, &data); err != nil {
 		return string(payload)
 	}
 
-	units, ok := data["units"].(map[string]interface{})
-	if !ok {
-		return string(payload)
-	}
+	// Strip the top-level ringBearerRegion field — Dark Side must NEVER see this
+	data["ringBearerRegion"] = ""
 
-	for unitID, unitData := range units {
-		unit, ok := unitData.(map[string]interface{})
-		if !ok {
-			continue
+	// Strip ring-bearer unit's region inside the units map
+	if units, ok := data["units"].(map[string]interface{}); ok {
+		for unitID, unitData := range units {
+			unit, ok := unitData.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			// Only strip the ring-bearer unit, identified by its ID containing "ring-bearer"
+			// In practice the unit ID is always "ring-bearer" per config
+			if _, isRB := unit["region"]; isRB {
+				// Only strip if this is the ring bearer unit
+				if len(unitID) >= 11 && unitID[:11] == "ring-bearer" {
+					unit["region"] = ""
+					unit["currentRegion"] = ""
+					units[unitID] = unit
+				}
+			}
 		}
-		// Strip ring bearer region — identified by currentRegion field being non-empty
-		// and class being RingBearer. We check by looking at unitId structure.
-		// In the spec, only the ring-bearer unit has class=RingBearer.
-		// We enforce this via the cache which always sets ring-bearer.Region = "".
-		// Additional safety: strip any unit with non-empty currentRegion if it's the ring bearer.
-		_ = unitID
-		unit["currentRegion"] = ""
-		units[unitID] = unit
-	}
-
-	data["units"] = units
-	// Ensure DarkView never contains ring bearer region
-	if dv, ok := data["darkView"].(map[string]interface{}); ok {
-		dv["ringBearerRegion"] = "" // ALWAYS "" — enforced here
-		data["darkView"] = dv
+		data["units"] = units
 	}
 
 	result, _ := json.Marshal(data)
 	return string(result)
 }
+
 
 // Run starts the EventRouter's select loop (all 7 cases from spec Section 31)
 func (er *EventRouter) Run(wg *sync.WaitGroup, done <-chan struct{}) {

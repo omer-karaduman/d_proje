@@ -201,3 +201,13 @@ func (g *Graph) IsEndpointRegion(pathID, regionID string) bool {
 	}
 	return regionID == from || regionID == to
 }
+
+// AreAdjacent returns true if regionA and regionB are directly connected by any path
+func (g *Graph) AreAdjacent(regionA, regionB string) bool {
+	for _, e := range g.adjacency[regionA] {
+		if e.To == regionB {
+			return true
+		}
+	}
+	return false
+}

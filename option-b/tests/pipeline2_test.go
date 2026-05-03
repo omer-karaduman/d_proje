@@ -48,7 +48,7 @@ func TestPipeline2_PositiveInterceptWindow(t *testing.T) {
 	// interceptWindow = rbTurnsToReach - turnsToIntercept = 2 - 1 = 1 > 0
 	cache := makeP2Cache("minas-morgul")
 
-	p2 := engine.NewPipeline2()
+	p2 := engine.NewPipeline2(nil)
 	result := p2.Request(cache, "ithilien")
 
 	if len(result.ByUnit) == 0 {
@@ -80,7 +80,7 @@ func TestPipeline2_NegativeInterceptWindowScoreZero(t *testing.T) {
 	// Witch-King is many hops away
 	cache := makeP2Cache("ithilien") // far from mount-doom
 
-	p2 := engine.NewPipeline2()
+	p2 := engine.NewPipeline2(nil)
 	// Ring Bearer already at mount-doom — Witch-King cannot intercept
 	result := p2.Request(cache, "mount-doom")
 

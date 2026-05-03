@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -139,16 +140,25 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"turn":    state.Turn,
-		"units":   publicUnits,
-		"regions": state.Regions,
-		"paths":   state.Paths,
-		"session": state.Session,
+		"turn":             state.Turn,
+		"turnStartedAt":    state.TurnStartedAt,
+		"turnDurationSec":  int(state.Session.TurnDuration),
+		"turnRemainingSec": int(state.Session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
+		"units":          publicUnits,
+		"regions":        state.Regions,
+		"paths":          state.Paths,
+		"session":        state.Session,
 	}
 
-	// Light Side gets ring bearer position
+	// Light Side gets ring bearer position via both top-level and lightView fields
 	if !isDarkSide {
-		response["ringBearerRegion"] = state.LightView.RingBearerRegion
+		rbRegion := state.LightView.RingBearerRegion
+		response["ringBearerRegion"] = rbRegion
+		response["lightView"] = map[string]interface{}{
+			"ringBearerRegion": rbRegion,
+			"assignedRoute":    state.LightView.AssignedRoute,
+			"routeIdx":         state.LightView.RouteIdx,
+		}
 	}
 	// Dark Side NEVER gets ring bearer position
 	if isDarkSide {

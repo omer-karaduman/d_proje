@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -9,26 +10,26 @@ import (
 	"ring-of-the-middle-earth/internal/game"
 )
 
-// Pipeline2 implements the Interception Analysis pipeline (Section 33).
-// 4 workers, buffer cap 30, triggered by GET /analysis/intercept or RingBearerDetected event.
-
 // InterceptRequest is a request for interception analysis
 type InterceptRequest struct {
 	Cache             game.WorldStateCache
-	RingBearerRegion  string // only known to Light Side / engine
+	RingBearerRegion  string
 	ResultCh          chan<- game.InterceptPlan
 	CancelCtx         context.Context
+	EventTriggered    bool // True if triggered by event, false if HTTP
 }
 
 // Pipeline2 manages the interception analysis pipeline
 type Pipeline2 struct {
 	dispatchCh chan InterceptRequest
+	router     *EventRouter // To emit results if event-triggered
 }
 
 // NewPipeline2 creates a new Pipeline2
-func NewPipeline2() *Pipeline2 {
+func NewPipeline2(router *EventRouter) *Pipeline2 {
 	return &Pipeline2{
-		dispatchCh: make(chan InterceptRequest, 30), // buffer cap = 30 per spec
+		dispatchCh: make(chan InterceptRequest, 30),
+		router:     router,
 	}
 }
 
@@ -36,7 +37,12 @@ func NewPipeline2() *Pipeline2 {
 func (p *Pipeline2) Start(wg *sync.WaitGroup, done <-chan struct{}) {
 	numWorkers := 4
 	workerCh := make(chan InterceptRequest, 30)
-	aggregateCh := make(chan []game.UnitInterceptPlan) // unbuffered
+	
+	type workerResult struct {
+		Req   InterceptRequest
+		Plans []game.UnitInterceptPlan
+	}
+	aggregateCh := make(chan workerResult, 30)
 
 	// Dispatcher
 	go func() {
@@ -71,32 +77,61 @@ func (p *Pipeline2) Start(wg *sync.WaitGroup, done <-chan struct{}) {
 					continue
 				default:
 				}
-				// Value copy of cache — never pointers
-				cacheCopy := req.Cache
+				
+				cacheCopy := deepCopyCache(req.Cache)
 				plans := computeInterceptionPlans(cacheCopy, req.RingBearerRegion)
+				
 				select {
-				case aggregateCh <- plans:
+				case aggregateCh <- workerResult{Req: req, Plans: plans}:
 				case <-req.CancelCtx.Done():
 				}
 			}
 		}(i)
 	}
 
-	// Aggregator / shutdown
+	// Aggregator
+	go func() {
+		for res := range aggregateCh {
+			plan := game.InterceptPlan{ByUnit: res.Plans}
+			
+			// If HTTP requested, send to channel
+			if res.Req.ResultCh != nil {
+				select {
+				case res.Req.ResultCh <- plan:
+				default:
+				}
+			}
+			
+			// If Event triggered, emit to Dark Side SSE
+			if res.Req.EventTriggered && p.router != nil {
+				payload := map[string]interface{}{
+					"event": "InterceptionPlanGenerated",
+					"plan":  plan,
+				}
+				jsonBytes, _ := json.Marshal(payload)
+				p.router.RouteEvent("game.analysis.intercept", jsonBytes)
+			}
+		}
+	}()
+
 	go func() {
 		workerWg.Wait()
 		close(aggregateCh)
 	}()
 }
 
-// Request computes the interception plan with 2-second timeout
+// Request computes an interception plan synchronously (with 2-second timeout).
+// Uses a goroutine + context for or-done cancellation per spec Section 33.
 func (p *Pipeline2) Request(cache game.WorldStateCache, ringBearerRegion string) game.InterceptPlan {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	resultCh := make(chan game.InterceptPlan, 1)
+
 	go func() {
-		plans := computeInterceptionPlans(cache, ringBearerRegion)
+		// Value copy of cache — never pass pointers between goroutines
+		cacheCopy := deepCopyCache(cache)
+		plans := computeInterceptionPlans(cacheCopy, ringBearerRegion)
 		select {
 		case resultCh <- game.InterceptPlan{ByUnit: plans}:
 		case <-ctx.Done():
@@ -107,13 +142,30 @@ func (p *Pipeline2) Request(cache game.WorldStateCache, ringBearerRegion string)
 	case result := <-resultCh:
 		return result
 	case <-ctx.Done():
-		log.Println("Pipeline2: timeout, returning partial result")
+		log.Println("Pipeline2: processing timeout, returning partial result")
 		return game.InterceptPlan{}
 	}
 }
 
+
+// TriggerAsync triggers pipeline 2 asynchronously on RingBearerDetected
+func (p *Pipeline2) TriggerAsync(cache game.WorldStateCache, ringBearerRegion string) {
+	req := InterceptRequest{
+		Cache:            cache,
+		RingBearerRegion: ringBearerRegion,
+		ResultCh:         nil,
+		CancelCtx:        context.Background(),
+		EventTriggered:   true,
+	}
+	
+	select {
+	case p.dispatchCh <- req:
+	default:
+		log.Println("Pipeline2: dispatchCh full, dropping async trigger")
+	}
+}
+
 // computeInterceptionPlans computes (Nazgul, route-candidate) interception scores.
-// Nazgul are identified by config.DetectionRange > 0 — no ID literals.
 func computeInterceptionPlans(cache game.WorldStateCache, ringBearerRegion string) []game.UnitInterceptPlan {
 	var plans []game.UnitInterceptPlan
 
@@ -122,7 +174,6 @@ func computeInterceptionPlans(cache game.WorldStateCache, ringBearerRegion strin
 		if !ok || u.Status != game.Active {
 			continue
 		}
-		// Nazgul: identified by DetectionRange > 0 (config-driven)
 		if cfg.DetectionRange <= 0 {
 			continue
 		}
@@ -131,13 +182,9 @@ func computeInterceptionPlans(cache game.WorldStateCache, ringBearerRegion strin
 		bestRegion := ""
 		bestTurns := 0
 
-		// For each canonical route, find best interception point
 		for _, route := range canonicalRoutes {
 			for routeIdx, routeRegion := range route.Regions {
-				// turnsToIntercept: BFS distance from Nazgul to routeRegion
 				turnsToIntercept := bfsDistance(u.Region, routeRegion, cache.Paths)
-
-				// rbTurnsToReach: sum of path costs to reach routeRegion from Ring Bearer's last known position
 				rbTurnsToReach := pathCostToRegion(ringBearerRegion, route, routeIdx, cache.Paths)
 
 				interceptWindow := rbTurnsToReach - turnsToIntercept
@@ -171,7 +218,6 @@ func computeInterceptionPlans(cache game.WorldStateCache, ringBearerRegion strin
 	return plans
 }
 
-// bfsDistance computes BFS hop distance between two regions using path adjacency
 func bfsDistance(from, to string, paths map[string]game.PathState) int {
 	if from == to {
 		return 0
@@ -206,16 +252,14 @@ func bfsDistance(from, to string, paths map[string]game.PathState) int {
 			}
 		}
 	}
-	return 999 // unreachable
+	return 999 
 }
 
-// pathCostToRegion computes the sum of path costs from a starting region to a target region index on a route
 func pathCostToRegion(startRegion string, route struct {
 	Name    string
 	Regions []string
 	Paths   []string
 }, targetIdx int, paths map[string]game.PathState) int {
-	// Find start index on route
 	startIdx := -1
 	for i, r := range route.Regions {
 		if r == startRegion {

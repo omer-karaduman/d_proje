@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -16,53 +17,36 @@ import (
 	"ring-of-the-middle-earth/internal/api"
 	"ring-of-the-middle-earth/internal/engine"
 	"ring-of-the-middle-earth/internal/game"
+	"ring-of-the-middle-earth/internal/kafka"
 )
-
-// main is the entry point for the Go game server.
-// Goroutine architecture (Section 28):
-//   - KafkaConsumer goroutines (one per topic)
-//   - EventRouter goroutine
-//   - CacheManager goroutine
-//   - TurnProcessor goroutine
-//   - Pipeline 1 goroutines (4 workers)
-//   - Pipeline 2 goroutines (4 workers)
-//   - SSE goroutines (one per player)
-//   - HTTP server goroutine
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("Ring of the Middle Earth — starting Go game server")
 
-	// Determine config paths (relative to binary or from env)
+	// Determine config paths
 	configDir := os.Getenv("CONFIG_DIR")
 	if configDir == "" {
 		configDir = filepath.Join("..", "config")
 	}
 
-	// Load unit configs from units.conf
+	// Load unit configs
 	unitConfigs, hiddenUntilTurn, maxTurns, turnDuration, err := game.LoadUnitsConfig(
 		filepath.Join(configDir, "units.conf"),
 	)
 	if err != nil {
 		log.Fatalf("Failed to load units config: %v", err)
 	}
-	log.Printf("Loaded %d unit configs", len(unitConfigs))
 
-	// Load map config from map.conf
+	// Load map config
 	regions, paths, err := game.LoadMapConfig(filepath.Join(configDir, "map.conf"))
 	if err != nil {
 		log.Fatalf("Failed to load map config: %v", err)
 	}
-	log.Printf("Loaded %d regions, %d paths", len(regions), len(paths))
 
-	// Build graph
 	graph := game.NewGraph(regions, paths)
 
-	// Initialize world state
-	initialUnits := initializeUnits(unitConfigs)
-	initialRegions := initializeRegions(regions)
-	initialPaths := initializePaths(paths)
-
+	// Setup Initial State (Fallback if recovery fails/empty)
 	session := &game.GameSession{
 		SessionID:    "session-1",
 		Phase:        game.WaitingForPlayers,
@@ -73,93 +57,216 @@ func main() {
 	}
 
 	initialCache := game.WorldStateCache{
-		Turn:        1,
-		Units:       initialUnits,
-		Regions:     initialRegions,
-		Paths:       initialPaths,
-		UnitConfigs: unitConfigs,
-		Session:     *session,
-		LightView:   game.LightSideView{RingBearerRegion: "the-shire"},
-		DarkView:    game.DarkSideView{RingBearerRegion: ""}, // ALWAYS ""
+		Turn:          1,
+		TurnStartedAt: time.Now().Unix(),
+		Units:         initializeUnits(unitConfigs),
+		Regions:       initializeRegions(regions),
+		Paths:         initializePaths(paths),
+		UnitConfigs:   unitConfigs,
+		Session:       *session,
+		LightView:     game.LightSideView{RingBearerRegion: "the-shire"},
+		DarkView:      game.DarkSideView{RingBearerRegion: ""},
 	}
 
-	// Create goroutine infrastructure
+	// Initialize Kafka Avro Helper
+	srURL := os.Getenv("SCHEMA_REGISTRY_URL")
+	if srURL == "" {
+		srURL = "http://localhost:8081"
+	}
+	avroHelper, err := kafka.NewAvroHelper(srURL)
+	if err != nil {
+		log.Printf("Warning: Failed to init Avro Helper: %v", err)
+	} else {
+		schemaDir := os.Getenv("SCHEMA_DIR")
+		if schemaDir == "" {
+			schemaDir = filepath.Join("..", "kafka", "schemas")
+		}
+		avroHelper.InitSchemas(schemaDir)
+	}
+
+	// Setup KTable State Recovery
+	recoveryConsumer, err := kafka.NewConsumer(nil, avroHelper)
+	if err == nil {
+		recoveredState, _ := recoveryConsumer.RecoverState()
+		if recoveredState != nil {
+			// Merge static config back into recovered state
+			recoveredState.UnitConfigs = unitConfigs
+			initialCache = *recoveredState
+		}
+	} else {
+		log.Printf("Warning: Could not create recovery consumer: %v", err)
+	}
+
+	// Start Engine Components
+	cacheManager := engine.NewCacheManager(initialCache)
+	
+	// Create channels
+	producerCh := make(chan engine.GameEvent, 200)
+	kafkaOrderCh := make(chan []byte, 100) // from HTTP to raw
+	
+	eventRouter := engine.NewEventRouter()
+	
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-
-	// CacheManager
-	cacheManager := engine.NewCacheManager(initialCache)
-
-	// Event channels
-	producerCh := make(chan engine.GameEvent, 200)
-	kafkaOrderCh := make(chan []byte, 100)
-
-	// EventRouter
-	eventRouter := engine.NewEventRouter()
+	
 	wg.Add(1)
 	go eventRouter.Run(&wg, done)
 
-	// TurnProcessor
-	engineCh := eventRouter.EngineCh()
-	validatedCh := make(<-chan engine.ValidatedOrder)
-	_ = validatedCh
+	// Only the PRIMARY instance (go-1) runs the TurnProcessor and pipelines.
+	// go-2 and go-3 are SSE fan-out replicas — they receive broadcasts via EventConsumer
+	// and route to their connected SSE clients. This prevents conflicting world states.
+	isPrimary := os.Getenv("IS_PRIMARY") == "true"
+	log.Printf("Instance %s — isPrimary=%v", os.Getenv("INSTANCE_ID"), isPrimary)
 
-	turnProc := engine.NewTurnProcessor(
-		cacheManager,
-		engineCh,
-		producerCh,
-		graph,
-		session,
-		unitConfigs,
-	)
-	wg.Add(1)
-	go turnProc.Run(&wg, done)
-
-	// Pipelines
 	p1 := engine.NewPipeline1()
-	p2 := engine.NewPipeline2()
-	wg.Add(2)
-	go p1.Start(&wg, done)
-	go p2.Start(&wg, done)
+	p2 := engine.NewPipeline2(eventRouter)
 
-	// Event producer goroutine (routes events to Kafka topics)
+	if isPrimary {
+		turnProc := engine.NewTurnProcessor(
+			cacheManager,
+			eventRouter.EngineCh(),
+			producerCh,
+			graph,
+			&initialCache.Session,
+			unitConfigs,
+			p2,
+		)
+		wg.Add(1)
+		go turnProc.Run(&wg, done)
+
+		wg.Add(2)
+		go p1.Start(&wg, done)
+		go p2.Start(&wg, done)
+	} else {
+		// Non-primary: pipelines still needed for HTTP /analysis endpoint
+		wg.Add(2)
+		go p1.Start(&wg, done)
+		go p2.Start(&wg, done)
+	}
+
+
+	// Real Kafka Producer
+	producer, err := kafka.NewProducer(avroHelper)
+	if err != nil {
+		log.Printf("Warning: Failed to create producer: %v", err)
+	}
+
+	// Event producer goroutine (from engine to Kafka)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for {
 			select {
 			case <-done:
+				if producer != nil {
+					producer.Close()
+				}
 				return
 			case event := <-producerCh:
-				// In production: publish to Kafka
-				// For development: route directly via EventRouter
-				log.Printf("Event: topic=%s", event.Topic)
+				if producer != nil {
+					// Route events to proper topics
+					var key string
+					var subject string
+					switch event.Topic {
+					case "game.events.unit":
+						m, ok := event.Payload.(map[string]interface{})
+						if ok {
+							key, _ = m["unitId"].(string)
+						}
+					case "game.events.region":
+						m, ok := event.Payload.(map[string]interface{})
+						if ok {
+							key, _ = m["regionId"].(string)
+						}
+					case "game.events.path":
+						m, ok := event.Payload.(map[string]interface{})
+						if ok {
+							key, _ = m["pathId"].(string)
+						}
+					case "game.orders.validated":
+						m, ok := event.Payload.(map[string]interface{})
+						if ok {
+							key, _ = m["unitId"].(string)
+						}
+					}
+						if err := producer.Produce(event.Topic, key, event.Payload, subject); err != nil {
+						log.Printf("Producer error on %s: %v", event.Topic, err)
+					}
+
+				} else {
+					// Fallback to internal routing
+					importJSON := func(p interface{}) []byte {
+						b, _ := json.Marshal(p)
+						return b
+					}
+					eventRouter.RouteEvent(event.Topic, importJSON(event.Payload))
+				}
 			}
 		}
 	}()
 
-	// Kafka order consumer goroutine (routes raw orders to validator)
+	// HTTP to raw topic goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		kafkaBroker := os.Getenv("KAFKA_BROKER")
-		if kafkaBroker == "" {
-			log.Println("KAFKA_BROKER not set — running in local mode (orders from HTTP directly)")
-		}
 		for {
 			select {
 			case <-done:
 				return
 			case orderBytes := <-kafkaOrderCh:
-				// Forward to EventRouter
-				eventRouter.RouteEvent("game.orders.validated", orderBytes)
+				if producer != nil {
+					var order map[string]interface{}
+					json.Unmarshal(orderBytes, &order)
+					key, _ := order["unitId"].(string)
+					producer.Produce("game.orders.raw", key, order, "game.orders.raw-value")
+				} else {
+					// Direct loopback to validator if no Kafka
+					eventRouter.RouteEvent("game.orders.validated", orderBytes)
+				}
 			}
 		}
 	}()
 
+	// Topology 1 & 2 logic
+	validator := kafka.NewOrderValidator(cacheManager, unitConfigs)
+	// onValidated routes the validated order directly to TurnProcessor's engineCh.
+	// This closes the order chain: orders.raw → validate → orders.validated (Kafka)
+	//                                                                         ↓ also
+	//                                                         eventRouter.engineCh → TurnProcessor
+	onValidated := func(orderBytes []byte) {
+		eventRouter.RouteEvent("game.orders.validated", orderBytes)
+	}
+	orderProcessor := kafka.NewOrderProcessor(validator, producer, onValidated)
+
+	
+	// Real Kafka Consumer for order processing
+	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
+	consumer, err := kafka.NewConsumer(orderProcessor, avroHelper)
+	if err == nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			consumer.Start(consumerCtx)
+		}()
+	} else {
+		log.Printf("Warning: Failed to create order consumer: %v", err)
+	}
+
+	// Real Kafka Consumer for SSE Events
+	eventConsumer, err := kafka.NewEventConsumer(eventRouter, avroHelper)
+	if err == nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			eventConsumer.Start(consumerCtx)
+		}()
+	} else {
+		log.Printf("Warning: Failed to create event consumer: %v", err)
+	}
+
 	// HTTP API server
 	r := mux.NewRouter()
-	apiHandler := api.NewHandler(cacheManager, eventRouter, p1, p2, kafkaOrderCh, session)
+	apiHandler := api.NewHandler(cacheManager, eventRouter, p1, p2, kafkaOrderCh, &initialCache.Session)
 	apiHandler.RegisterRoutes(r)
 
 	// Serve static UI files
@@ -174,7 +281,7 @@ func main() {
 		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 0, // SSE needs no write timeout
+		WriteTimeout: 0,
 	}
 
 	// HTTP server goroutine
@@ -193,6 +300,7 @@ func main() {
 	<-sigCh
 
 	log.Println("Shutting down gracefully...")
+	cancelConsumer()
 	close(done)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -208,7 +316,6 @@ func initializeUnits(configs map[string]game.UnitConfig) map[string]game.UnitSna
 	units := make(map[string]game.UnitSnapshot, len(configs))
 	for id, cfg := range configs {
 		region := cfg.StartRegion
-		// Ring Bearer's region is always "" in public state
 		if cfg.Class == game.RingBearer {
 			region = ""
 		}
@@ -226,7 +333,6 @@ func initializeUnits(configs map[string]game.UnitConfig) map[string]game.UnitSna
 	return units
 }
 
-// initializeRegions converts []RegionState to map[regionID]RegionState
 func initializeRegions(regions []game.RegionState) map[string]game.RegionState {
 	m := make(map[string]game.RegionState, len(regions))
 	for _, r := range regions {
@@ -235,7 +341,6 @@ func initializeRegions(regions []game.RegionState) map[string]game.RegionState {
 	return m
 }
 
-// initializePaths converts []PathState to map[pathID]PathState
 func initializePaths(paths []game.PathState) map[string]game.PathState {
 	m := make(map[string]game.PathState, len(paths))
 	for _, p := range paths {

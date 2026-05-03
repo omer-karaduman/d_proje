@@ -141,74 +141,25 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
-    command: >
+    command: |
       bash -c "
-      echo 'Waiting for Kafka...' &&
-      sleep 10 &&
-      echo 'Creating topics...' &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.orders.raw
-        --partitions 3 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=3600000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.orders.validated
-        --partitions 6 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=3600000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.events.unit
-        --partitions 6 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=604800000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.events.region
-        --partitions 6 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=604800000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.events.path
-        --partitions 6 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=604800000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.session
-        --partitions 1 --replication-factor 3
-        --config cleanup.policy=compact &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.broadcast
-        --partitions 1 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=3600000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.ring.position
-        --partitions 1 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=3600000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.ring.detection
-        --partitions 2 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=3600000 &&
-
-      kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092
-        --topic game.dlq
-        --partitions 3 --replication-factor 3
-        --config cleanup.policy=delete
-        --config retention.ms=604800000 &&
-
-      echo 'All 10 topics created successfully!' &&
-      kafka-topics --list --bootstrap-server kafka-1:9092
+        echo 'Waiting for Kafka...' &&
+        sleep 10 &&
+        echo 'Creating topics...' &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.raw --partitions 3 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.validated --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.unit --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.region --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.path --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.session --partitions 1 --replication-factor 3 --config cleanup.policy=compact &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.broadcast --partitions 1 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.ring.position --partitions 1 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.ring.detection --partitions 2 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.dlq --partitions 3 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
+        echo 'All 10 topics created successfully!' &&
+        kafka-topics --list --bootstrap-server kafka-1:9092
       "
+
 
   # ── Go Game Engine (3 instances for consumer group) ────────────────────────
   go-1:
@@ -229,6 +180,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       CONSUMER_GROUP_ID: ring-engine-group
       INSTANCE_ID: go-1
+      IS_PRIMARY: "true"    # Only go-1 runs the TurnProcessor
       PORT: 8080
       CONFIG_DIR: /app/config
       APP_VERSION: "1.0.0"
@@ -253,6 +205,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       CONSUMER_GROUP_ID: ring-engine-group
       INSTANCE_ID: go-2
+      IS_PRIMARY: "false"   # SSE fan-out only
       PORT: 8080
       CONFIG_DIR: /app/config
       APP_VERSION: "1.0.0"
@@ -277,6 +230,7 @@ services:
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
       CONSUMER_GROUP_ID: ring-engine-group
       INSTANCE_ID: go-3
+      IS_PRIMARY: "false"   # SSE fan-out only
       PORT: 8080
       CONFIG_DIR: /app/config
       APP_VERSION: "1.0.0"

@@ -53,14 +53,14 @@ const (
 
 // UnitSnapshot holds the mutable runtime state of a unit
 type UnitSnapshot struct {
-	ID           string
-	Region       string // always "" for ring-bearer in public state
-	Strength     int
-	Status       UnitStatus
-	RespawnTurns int
-	Route        []string // path IDs
-	RouteIdx     int
-	Cooldown     int
+	ID           string     `json:"id"`
+	Region       string     `json:"region"` // always "" for ring-bearer in public state
+	Strength     int        `json:"strength"`
+	Status       UnitStatus `json:"status"`
+	RespawnTurns int        `json:"respawnTurns"`
+	Route        []string   `json:"route"` // path IDs
+	RouteIdx     int        `json:"routeIdx"`
+	Cooldown     int        `json:"cooldown"`
 }
 
 // PathStatus represents the current status of a path
@@ -75,15 +75,15 @@ const (
 
 // PathState holds the runtime state of a path
 type PathState struct {
-	ID               string
-	From             string
-	To               string
-	Cost             int
-	Status           PathStatus
-	SurveillanceLevel int
-	TempOpenTurns    int
-	BlockedBy        string // unit ID of blocking unit, "" if none
-	Corrupted        bool   // permanently corrupted by Saruman
+	ID                string     `json:"id"`
+	From              string     `json:"from"`
+	To                string     `json:"to"`
+	Cost              int        `json:"cost"`
+	Status            PathStatus `json:"status"`
+	SurveillanceLevel int        `json:"surveillanceLevel"`
+	TempOpenTurns     int        `json:"tempOpenTurns"`
+	BlockedBy         string     `json:"blockedBy"` // unit ID of blocking unit, "" if none
+	Corrupted         bool       `json:"corrupted"` // permanently corrupted by Saruman
 }
 
 // Terrain types for regions
@@ -119,15 +119,15 @@ const (
 
 // RegionState holds the runtime state of a region
 type RegionState struct {
-	ID           string
-	Name         string
-	Terrain      Terrain
-	SpecialRole  SpecialRole
-	ControlledBy Controller
-	ThreatLevel  int
-	Fortified    bool
-	FortifyTurns int
-	UnitsPresent []string // unit IDs
+	ID           string      `json:"id"`
+	Name         string      `json:"name"`
+	Terrain      Terrain     `json:"terrain"`
+	SpecialRole  SpecialRole `json:"specialRole"`
+	ControlledBy Controller  `json:"controlledBy"`
+	ThreatLevel  int         `json:"threatLevel"`
+	Fortified    bool        `json:"fortified"`
+	FortifyTurns int         `json:"fortifyTurns"`
+	UnitsPresent []string    `json:"unitsPresent"` // unit IDs
 }
 
 // RingBearerState holds the secret state of the Ring Bearer.
@@ -217,6 +217,7 @@ type GameSession struct {
 // owned by the CacheManager goroutine — never shared by pointer
 type WorldStateCache struct {
 	Turn           int
+	TurnStartedAt  int64 // Unix seconds — set when each turn begins; used by clients to sync timer
 	Units          map[string]UnitSnapshot
 	Regions        map[string]RegionState
 	Paths          map[string]PathState
