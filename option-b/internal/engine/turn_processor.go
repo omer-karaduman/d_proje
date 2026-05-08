@@ -56,7 +56,7 @@ func NewTurnProcessor(
 		producerCh:     producerCh,
 		graph:          graph,
 		session:        session,
-		ringBearer:     &game.RingBearerState{TrueRegion: "the-shire"},
+		ringBearer:     &game.RingBearerState{TrueRegion: ""},
 		unitConfigs:    unitConfigs,
 		ordersThisTurn: make(map[string]game.Order),
 		pipeline2:      p2,
