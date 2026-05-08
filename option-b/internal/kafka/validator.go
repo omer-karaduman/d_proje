@@ -85,6 +85,29 @@ func (v *OrderValidator) Validate(order game.Order, seenUnits map[string]bool) (
 		}
 	}
 
+	if order.OrderType == game.DestroyRingOrder {
+		// Rule: Valid only when Ring Bearer is at mount-doom and no Dark Side unit is there.
+		// IMPORTANT: unit.Region is always "" for Ring Bearer in public state — use LightView.RingBearerRegion.
+		if cfg.Class != game.RingBearer {
+			return false, game.ErrNotYourUnit
+		}
+		rbRegion := state.LightView.RingBearerRegion
+		// Identify mount-doom by SpecialRole (RING_DESTRUCTION_SITE), not by hardcoded string
+		rbRegionState, exists := state.Regions[rbRegion]
+		if !exists || rbRegionState.SpecialRole != game.RingDestructionSite {
+			return false, game.ErrDestroyConditionNotMet
+		}
+		// Check for Shadow units at Ring Bearer's true region
+		for _, u := range state.Units {
+			if u.Region == rbRegion && u.Status == game.Active {
+				uCfg := v.unitConfigs[u.ID]
+				if uCfg.Side == game.Shadow {
+					return false, game.ErrDestroyConditionNotMet
+				}
+			}
+		}
+	}
+
 	return true, ""
 }
 
@@ -163,7 +186,8 @@ func (v *OrderValidator) calculateNazgulProximity(state game.WorldStateCache, re
 		cfg := v.unitConfigs[u.ID]
 		if cfg.DetectionRange > 0 && u.Status == game.Active {
 			for rid := range regions {
-				if u.Region == rid || v.isAdjacent(state, u.Region, rid) {
+				// DÜZELTME: 1 hop değil, 2 hop kontrolü (Spec: "number of Nazgul within 2 graph hops")
+				if v.graphDistance(state, u.Region, rid) <= 2 {
 					count++
 					break
 				}
@@ -171,4 +195,39 @@ func (v *OrderValidator) calculateNazgulProximity(state game.WorldStateCache, re
 		}
 	}
 	return count
+}
+
+// graphDistance calculates shortest path distance using BFS (capped at 3 for performance)
+func (v *OrderValidator) graphDistance(state game.WorldStateCache, a, b string) int {
+	if a == b {
+		return 0
+	}
+	visited := map[string]bool{a: true}
+	queue := []string{a}
+	dist := 0
+	for len(queue) > 0 && dist < 3 {
+		dist++
+		var next []string
+		for _, cur := range queue {
+			for _, p := range state.Paths {
+				var neighbor string
+				if p.From == cur {
+					neighbor = p.To
+				} else if p.To == cur {
+					neighbor = p.From
+				} else {
+					continue
+				}
+				if neighbor == b {
+					return dist
+				}
+				if !visited[neighbor] {
+					visited[neighbor] = true
+					next = append(next, neighbor)
+				}
+			}
+		}
+		queue = next
+	}
+	return 99 // beyond threshold
 }

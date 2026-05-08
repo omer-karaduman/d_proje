@@ -330,9 +330,10 @@ func (tp *TurnProcessor) stepBlockAndSearch(state game.WorldStateCache, orders m
 			path.BlockedBy = unitID
 			state.Paths[pathID] = path
 			tp.emit("game.events.path", map[string]interface{}{
-				"event":  "PathStatusChanged",
-				"pathId": pathID,
-				"status": game.Blocked,
+				"event":     "PathStatusChanged",
+				"pathId":    pathID,
+				"status":    game.Blocked,    // for WorldStateCache merge
+				"newStatus": game.Blocked,    // for UI map color (Section 7 display)
 			})
 
 		case game.SearchPathOrder:
@@ -363,9 +364,10 @@ func (tp *TurnProcessor) stepBlockAndSearch(state game.WorldStateCache, orders m
 				path.BlockedBy = ""
 				state.Paths[pathID] = path
 				tp.emit("game.events.path", map[string]interface{}{
-					"event":  "PathStatusChanged",
-					"pathId": pathID,
-					"status": game.Open,
+					"event":     "PathStatusChanged",
+					"pathId":    pathID,
+					"status":    game.Open,
+					"newStatus": game.Open,
 				})
 			}
 		}
@@ -493,7 +495,8 @@ func (tp *TurnProcessor) stepMaiaAbilities(state game.WorldStateCache, orders ma
 			tp.emit("game.events.path", map[string]interface{}{
 				"event":         "PathStatusChanged",
 				"pathId":        targetPathID,
-				"status":        game.TemporarilyOpen,
+				"status":        game.TemporarilyOpen, // for WorldStateCache
+				"newStatus":     game.TemporarilyOpen, // for UI map color — Demo Scenario 2
 				"tempOpenTurns": 2,
 			})
 
@@ -889,7 +892,12 @@ func (tp *TurnProcessor) stepDetection(state game.WorldStateCache, turn int) gam
 // Spec 1.2: Light Side wins ONLY if DestroyRing order was submitted this turn.
 func (tp *TurnProcessor) stepWinConditions(state game.WorldStateCache, orders map[string]game.Order, turn int) (bool, map[string]interface{}) {
 	// Light Side wins: Ring Bearer at mount-doom + DestroyRing submitted + no Dark Side unit at mount-doom
-	if tp.ringBearer.TrueRegion == "mount-doom" {
+	// mount-doom identified by RingDestructionSite special role — no hardcoded string literal (B1)
+	rbRegion := tp.ringBearer.TrueRegion
+	rbRegionState, rbRegionExists := state.Regions[rbRegion]
+	atDestructionSite := rbRegionExists && rbRegionState.SpecialRole == game.RingDestructionSite
+
+	if atDestructionSite {
 		// Check that DESTROY_RING order was submitted this turn
 		destroyRingSubmitted := false
 		for _, o := range orders {
@@ -899,14 +907,14 @@ func (tp *TurnProcessor) stepWinConditions(state game.WorldStateCache, orders ma
 			}
 		}
 		if !destroyRingSubmitted {
-			log.Printf("TurnProcessor: Ring Bearer at mount-doom but DESTROY_RING not submitted")
+			log.Printf("TurnProcessor: Ring Bearer at destruction site but DESTROY_RING not submitted")
 		}
 
 		if destroyRingSubmitted {
 			darkSideAtMountDoom := false
 			for unitID, u := range state.Units {
 				cfg := tp.unitConfigs[unitID]
-				if cfg.Side == game.Shadow && u.Status == game.Active && u.Region == "mount-doom" {
+				if cfg.Side == game.Shadow && u.Status == game.Active && u.Region == rbRegion {
 					darkSideAtMountDoom = true
 					break
 				}
@@ -960,20 +968,34 @@ func (tp *TurnProcessor) emit(topic string, payload interface{}) {
 // emitWorldStateSnapshot emits the full world state to game.broadcast
 func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 	// Build public units view — Ring Bearer region is always "" for public state
+	// class field MUST be included so EventRouter.stripRingBearer can identify RingBearer without hardcoding ID
 	publicUnits := make(map[string]game.UnitSnapshot, len(state.Units))
+	type publicUnit struct {
+		game.UnitSnapshot
+		Class  game.UnitClass `json:"class"`
+		Side   game.Side     `json:"side"`
+		IsMaia bool          `json:"isMaia"`
+	}
+	publicUnitsWithClass := make(map[string]publicUnit, len(state.Units))
 	for id, u := range state.Units {
 		cfg := tp.unitConfigs[id]
 		if cfg.Class == game.RingBearer {
 			u.Region = "" // enforce information hiding in public state
 		}
 		publicUnits[id] = u
+		publicUnitsWithClass[id] = publicUnit{
+			UnitSnapshot: u,
+			Class:        cfg.Class,
+			Side:         cfg.Side,
+			IsMaia:       cfg.IsMaia,
+		}
 	}
 
 	// Include ringBearerRegion (Light Side sees true region; stripRingBearer removes it for Dark Side)
 	tp.emit("game.broadcast", map[string]interface{}{
 		"event":            "WorldStateSnapshot",
 		"turn":             state.Turn,
-		"units":            publicUnits,
+		"units":            publicUnitsWithClass, // includes class field for stripRingBearer
 		"regions":          state.Regions,
 		"paths":            state.Paths,
 		"turnStartedAt":    state.TurnStartedAt,

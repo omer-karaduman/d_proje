@@ -7,6 +7,10 @@ const API = ''; // Always use same origin (nginx proxies /api/* to Go)
 const MAX_TURNS = 40;
 const TURN_SECONDS = 60;
 
+
+// Sayfa yüklendiğinde bu sekmeye özgü tekil ID üret
+const TAB_ID = Math.random().toString(36).slice(2, 9);
+
 // ── Unit display config (name, class, icon, special trait) ────────────
 const UNIT_DISPLAY = {
   'ring-bearer': { name: 'Frodo Baggins', cls: 'Ring Bearer', icon: '💍', trait: 'Gizli hareket' },
@@ -157,7 +161,8 @@ let canvas, ctx;
 // ── SSE Connection ────────────────────────────────────────────────────
 function connectSSE() {
   const sideParam = state.side === 'SHADOW' ? 'SHADOW' : 'FREE_PEOPLES';
-  const url = `${API}/events?playerId=${encodeURIComponent(state.playerId)}&side=${sideParam}`;
+  const connId = `${state.playerId}-${TAB_ID}`;
+  const url = `${API}/events?playerId=${encodeURIComponent(connId)}&side=${sideParam}`;
   if (state.eventSource) state.eventSource.close();
   state.eventSource = new EventSource(url);
 
@@ -238,12 +243,15 @@ function handleServerEvent(msg) {
         if (msg.turnStartedAt) {
           state.turnStartedAt = msg.turnStartedAt;
           state.turnDuration = turnDur;
-          syncTimerFromClock();
         } else if (typeof msg.turnRemainingSec === 'number') {
           state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, msg.turnRemainingSec));
           state.turnDuration = turnDur;
-          syncTimerFromClock();
+        } else {
+          // Fallback: Sunucu zamanı göndermediyse local başlat
+          state.turnStartedAt = Math.floor(Date.now() / 1000);
+          state.turnDuration = turnDur;
         }
+        syncTimerFromClock();
       }
       renderUnits();
       drawMap();
@@ -701,10 +709,14 @@ function drawMap() {
   ctx.fillStyle = '#06060e';
   ctx.fillRect(0, 0, W, H);
 
-  // ── 0. Nazgul Tespit Alanı (Sauron Pasif Kontrolü Hardcode Kaldırıldı) ──
+  // ── 0. Nazgul Tespit Alanı (Sauron Pasif Kontrolü) ──
   const sauronInMordor = (() => {
-    const s = Object.values(state.units).find(u => u.isMaia && u.region === 'mordor' && u.class !== 'Nazgul' && u.side === 'SHADOW');
-    return s && (s.status || 'ACTIVE') === 'ACTIVE';
+    const s = Object.values(state.units).find(u => {
+      const side = (u.side || '').toUpperCase();
+      const isShadow = side === 'SHADOW' || u.class === 'Maia' && u.id === 'sauron';
+      return isShadow && u.region === 'mordor' && (u.status || 'ACTIVE') === 'ACTIVE' && u.id === 'sauron';
+    });
+    return !!s;
   })();
 
   Object.entries(state.units).forEach(([uid, u]) => {
@@ -904,8 +916,10 @@ function drawMap() {
       const ux = sx + Math.cos(angle) * dist;
       const uy = sy + Math.sin(angle) * dist;
 
-      // DÜZELTME: ID bağımlı renk kararı kaldırıldı, güvenli u.side veya class kontrolü kullanıldı.
-      const isShadow = (u.side === 'SHADOW') || (u.class === 'Nazgul') || (u.class === 'Uruk-hai Legion') || (!u.side && u.isMaia && u.detectionRange > 0);
+      // DÜZELTME: Side alanını normalize et ve class/id fallback'lerini kullan
+      const uSide = (u.side || '').toUpperCase();
+      const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
+      const isShadow = uSide === 'SHADOW' || (uSide === '' && shadowIds.includes(uid));
 
       ctx.beginPath();
       ctx.arc(ux, uy - 10, 8, 0, Math.PI * 2);
@@ -1001,13 +1015,12 @@ function renderUnits() {
   list.innerHTML = '';
   const mySide = state.side === 'SHADOW' ? 'SHADOW' : 'FREE_PEOPLES';
 
-  // DÜZELTME: Hardcoded ID'ler kaldırıldı. Tamamen u.side referans alınır.
+  // DÜZELTME: Side alanına güvenir, yoksa ID listesine düşer (UI display map ile uyumlu)
   const isMyUnit = (uid, u) => {
-    if (u.side) return u.side === mySide;
-    const shadowClasses = ['Nazgul', 'Uruk-hai Legion'];
-    let isShadow = shadowClasses.includes(u.class);
-    if (!isShadow && u.isMaia && u.detectionRange > 0) isShadow = true;
-    return isShadow ? mySide === 'SHADOW' : mySide === 'FREE_PEOPLES';
+    const side = (u.side || '').toUpperCase();
+    if (side === 'SHADOW' || side === 'FREE_PEOPLES') return side === mySide;
+    const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
+    return shadowIds.includes(uid) ? mySide === 'SHADOW' : mySide === 'FREE_PEOPLES';
   };
 
   let count = 0;

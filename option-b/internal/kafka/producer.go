@@ -110,7 +110,8 @@ func (p *Producer) SendToValidated(order game.Order, riskScore int) {
 			enriched["payload"] = payloadBytes
 		}
 	} else {
-		enriched["payload"] = []byte{}
+		// DÜZELTME: Boş payload yerine en azından boş JSON objesi gönder (Section 12 uyumu)
+		enriched["payload"] = []byte("{}")
 	}
 
 	err := p.Produce("game.orders.validated", order.UnitID, enriched, "")

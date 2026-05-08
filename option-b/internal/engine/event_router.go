@@ -93,7 +93,9 @@ func (er *EventRouter) RouteEvent(topic string, payload []byte) {
 }
 
 // stripRingBearer removes ONLY the Ring Bearer's true region from a WorldStateSnapshot.
-// All other units' regions are preserved. This is the SINGLE enforcement point.
+// All other units' regions are preserved. This is the SINGLE enforcement point (B7).
+// Identification is done via the unit's "class" field == "RingBearer" — NOT by hardcoded ID string.
+// Q&A Question 4: "Show where the Ring Bearer's position is removed" — this function.
 func stripRingBearer(payload []byte) string {
 	var data map[string]interface{}
 	if err := json.Unmarshal(payload, &data); err != nil {
@@ -103,22 +105,20 @@ func stripRingBearer(payload []byte) string {
 	// Strip the top-level ringBearerRegion field — Dark Side must NEVER see this
 	data["ringBearerRegion"] = ""
 
-	// Strip ring-bearer unit's region inside the units map
+	// Strip ring-bearer unit's region inside the units map.
+	// Identified by unit.class == "RingBearer" — config-driven, no ID string literal.
 	if units, ok := data["units"].(map[string]interface{}); ok {
 		for unitID, unitData := range units {
 			unit, ok := unitData.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			// Only strip the ring-bearer unit, identified by its ID containing "ring-bearer"
-			// In practice the unit ID is always "ring-bearer" per config
-			if _, isRB := unit["region"]; isRB {
-				// Only strip if this is the ring bearer unit
-				if len(unitID) >= 11 && unitID[:11] == "ring-bearer" {
-					unit["region"] = ""
-					unit["currentRegion"] = ""
-					units[unitID] = unit
-				}
+			// Use the "class" field from UnitConfig (serialised into the snapshot) — never hardcode "ring-bearer"
+			cls, _ := unit["class"].(string)
+			if cls == string(game.RingBearer) {
+				unit["region"] = ""
+				unit["currentRegion"] = ""
+				units[unitID] = unit
 			}
 		}
 		data["units"] = units

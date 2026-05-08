@@ -55,7 +55,6 @@ func NewEventConsumer(router EventRouter, avroHelper *AvroHelper) (*EventConsume
 // Start subscribes to all game event topics and routes them to SSE clients
 func (c *EventConsumer) Start(ctx context.Context) {
 	topics := []string{
-		"game.orders.validated", // CRITICAL: without this, TurnProcessor receives NO orders
 		"game.events.unit",
 		"game.events.region",
 		"game.events.path",
