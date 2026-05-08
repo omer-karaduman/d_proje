@@ -88,11 +88,30 @@ func (h *Handler) StartGame(w http.ResponseWriter, r *http.Request) {
 	}
 	h.session.Phase = game.InProgress
 
-	// Reset the timer when the game starts
 	state := h.cache.GetSnapshot()
-	state.Session.Phase = game.InProgress
-	state.TurnStartedAt = time.Now().Unix()
-	h.cache.Update(state)
+
+	// Produce START_GAME order to Kafka to avoid bypassing distributed state
+	order := game.Order{
+		OrderType: game.StartGameOrder,
+		PlayerID:  "system",
+		UnitID:    "system", // Bypass normal validation
+		Turn:      state.Turn,
+		Payload:   map[string]interface{}{"mode": req.Mode},
+	}
+	payload, err := json.Marshal(order)
+	if err == nil {
+		select {
+		case h.kafkaCh <- payload:
+			log.Printf("[StartGame] START_GAME order queued to Kafka")
+		default:
+			log.Printf("[StartGame] ERROR: Kafka queue full")
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	} else {
+		http.Error(w, "serialization error", http.StatusInternalServerError)
+		return
+	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "started", "mode": req.Mode})
 }
@@ -102,71 +121,28 @@ func (h *Handler) StartGame(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ResetGame(w http.ResponseWriter, r *http.Request) {
 	state := h.cache.GetSnapshot()
 
-	// Reset session
-	h.session.Phase = game.WaitingForPlayers
-	h.session.CurrentTurn = 1
-
-	// Reset each unit to its starting state from UnitConfigs
-	resetUnits := make(map[string]game.UnitSnapshot, len(state.Units))
-	for id, cfg := range state.UnitConfigs {
-		region := cfg.StartRegion
-		if cfg.Class == game.RingBearer {
-			region = ""
+	// Produce RESET_GAME order to Kafka
+	order := game.Order{
+		OrderType: game.ResetGameOrder,
+		PlayerID:  "system",
+		UnitID:    "system",
+		Turn:      state.Turn,
+		Payload:   map[string]interface{}{},
+	}
+	payload, err := json.Marshal(order)
+	if err == nil {
+		select {
+		case h.kafkaCh <- payload:
+			log.Println("[ResetGame] RESET_GAME order queued to Kafka")
+		default:
+			log.Println("[ResetGame] ERROR: Kafka queue full")
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+			return
 		}
-		resetUnits[id] = game.UnitSnapshot{
-			ID:           id,
-			Region:       region,
-			Strength:     cfg.Strength,
-			Status:       game.Active,
-			RespawnTurns: 0,
-			Route:        nil,
-			RouteIdx:     0,
-			Cooldown:     0,
-		}
+	} else {
+		http.Error(w, "serialization error", http.StatusInternalServerError)
+		return
 	}
-
-	// Reset regions: clear control and fortification
-	resetRegions := make(map[string]game.RegionState, len(state.Regions))
-	for id, reg := range state.Regions {
-		reg.ControlledBy = ""
-		reg.Fortified = false
-		reg.FortifyTurns = 0
-		reg.ThreatLevel = 0
-		resetRegions[id] = reg
-	}
-
-	// Reset paths: clear surveillance and blocks
-	resetPaths := make(map[string]game.PathState, len(state.Paths))
-	for id, p := range state.Paths {
-		p.Status = game.Open
-		p.SurveillanceLevel = 0
-		p.BlockedBy = ""
-		p.TempOpenTurns = 0
-		p.Corrupted = false
-		resetPaths[id] = p
-	}
-
-	newState := state
-	newState.Turn = 1
-	newState.TurnStartedAt = time.Now().Unix()
-	newState.Units = resetUnits
-	newState.Regions = resetRegions
-	newState.Paths = resetPaths
-	newState.Session = *h.session
-	newState.Session.CurrentTurn = 1
-	newState.LightView = game.LightSideView{RingBearerRegion: "the-shire"}
-	newState.DarkView = game.DarkSideView{RingBearerRegion: "", LastDetectedRegion: "", LastDetectedTurn: 0}
-	h.cache.Update(newState)
-
-	// Broadcast reset event to all SSE clients via existing game.broadcast topic
-	resetEvent, _ := json.Marshal(map[string]interface{}{
-		"type":    "GameReset",
-		"turn":    1,
-		"message": "Oyun sıfırlandı.",
-	})
-	h.router.RouteEvent("game.broadcast", resetEvent)
-
-	log.Println("[reset] Game state reset to turn 1")
 	respondJSON(w, http.StatusOK, map[string]string{"status": "reset", "turn": "1"})
 }
 
@@ -215,6 +191,9 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 			"strength": u.Strength,
 			"status":   u.Status,
 			"region":   u.Region,
+			"class":    cfg.Class,
+			"detectionRange": cfg.DetectionRange,
+			"isMaia":   cfg.IsMaia,
 		}
 		// Enforce information hiding: Ring Bearer region is always "" for Dark Side
 		if isDarkSide && cfg.Class == game.RingBearer {

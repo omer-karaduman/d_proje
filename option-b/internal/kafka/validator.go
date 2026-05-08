@@ -20,6 +20,10 @@ func NewOrderValidator(cm *engine.CacheManager, configs map[string]game.UnitConf
 
 // Validate applies the 8 rules from Section 11
 func (v *OrderValidator) Validate(order game.Order, seenUnits map[string]bool) (bool, game.ErrorCode) {
+	if order.OrderType == game.StartGameOrder || order.OrderType == game.ResetGameOrder {
+		return true, ""
+	}
+
 	state := v.cacheManager.GetSnapshot()
 
 	if seenUnits[order.UnitID] {

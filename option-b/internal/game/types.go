@@ -155,6 +155,8 @@ const (
 	ReinforceRegionOrder OrderType = "REINFORCE_REGION"
 	FortifyRegionOrder  OrderType = "FORTIFY_REGION"
 	DeployNazgulOrder   OrderType = "DEPLOY_NAZGUL"
+	StartGameOrder      OrderType = "START_GAME"
+	ResetGameOrder      OrderType = "RESET_GAME"
 )
 
 // Order represents a game order submitted by a player

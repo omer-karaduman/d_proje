@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 // â”€â”€ API Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const API = ''; // Always use same origin (nginx proxies /api/* to Go)
@@ -10,27 +10,27 @@ const TURN_SECONDS = 60;
 // â”€â”€ Unit display config (name, class, icon, special trait) â”€â”€â”€â”€
 const UNIT_DISPLAY = {
   'ring-bearer': { name: 'Frodo Baggins', cls: 'Ring Bearer', icon: 'ğŸ’', trait: 'Gizli hareket' },
-  'aragorn': { name: 'Aragorn, Arathorn\'un OÄŸlu', cls: 'Fellowship Guard', icon: 'âš”ï¸', trait: 'Liderlik +1' },
-  'legolas': { name: 'Legolas YeÅŸilyaprak', cls: 'Fellowship Guard', icon: 'ğŸ¹', trait: 'HÄ±zlÄ± niÅŸancÄ±' },
-  'gimli': { name: 'Gimli, Gloin\'in OÄŸlu', cls: 'Fellowship Guard', icon: 'ğŸª“', trait: 'SavaÅŸÃ§Ä±' },
-  'rohan-cavalry': { name: 'Rohan SÃ¼varileri', cls: 'Fellowship Guard', icon: 'ğŸ´', trait: 'SÃ¼vari' },
+  'aragorn': { name: 'Aragorn, Arathorn\'un Oğlu', cls: 'Fellowship Guard', icon: 'âš”ï¸', trait: 'Liderlik +1' },
+  'legolas': { name: 'Legolas Yeşilyaprak', cls: 'Fellowship Guard', icon: 'ğŸ¹', trait: 'Hızlı nişancı' },
+  'gimli': { name: 'Gimli, Gloin\'in Oğlu', cls: 'Fellowship Guard', icon: '🪓', trait: 'Savaşçı' },
+  'rohan-cavalry': { name: 'Rohan Süvarileri', cls: 'Fellowship Guard', icon: 'ğŸ´', trait: 'Süvari' },
   'gondor-army': { name: 'Gondor Ordusu', cls: 'Gondor Army', icon: 'ğŸ›¡ï¸', trait: 'Tahkim edebilir (+2)' },
-  'gandalf': { name: 'Gandalf Gri', cls: 'Maia', icon: 'ğŸ”®', trait: 'Yol AÃ§ar (CD:3)' },
-  'witch-king': { name: 'CadÄ± Kral (Angmar)', cls: 'Nazgul', icon: 'ğŸ‘‘', trait: 'YÄ±kÄ±lmaz â€¢ Tespit:2 â€¢ Liderlik+1' },
-  'nazgul-2': { name: 'KaranlÄ±k MareÅŸal', cls: 'Nazgul', icon: 'ğŸŒ‘', trait: 'Tespit:1 â€¢ Yeniden DoÄŸar(3tur)' },
-  'nazgul-3': { name: 'Hain', cls: 'Nazgul', icon: 'ğŸŒ‘', trait: 'Tespit:1 â€¢ Yeniden DoÄŸar(3tur)' },
+  'gandalf': { name: 'Gandalf Gri', cls: 'Maia', icon: '🔮', trait: 'Yol Açar (CD:3)' },
+  'witch-king': { name: 'Cadı Kral (Angmar)', cls: 'Nazgul', icon: '👑', trait: 'Yıkılmaz • Tespit:2 • Liderlik+1' },
+  'nazgul-2': { name: 'Karanlık Mareşal', cls: 'Nazgul', icon: '🌒', trait: 'Tespit:1 • Yeniden Doğar(3tur)' },
+  'nazgul-3': { name: 'Hain', cls: 'Nazgul', icon: '🌒', trait: 'Tespit:1 • Yeniden Doğar(3tur)' },
   'uruk-hai-legion': { name: 'Uruk-hai Lejyonu', cls: 'Uruk-hai Legion', icon: 'ğŸ—¡ï¸', trait: 'Kale bonusunu yok sayar' },
-  'saruman': { name: 'Saruman Beyaz', cls: 'Maia', icon: 'ğŸ”±', trait: 'Yol Bozar (CD:2)' },
-  'sauron': { name: 'Sauron, KaranlÄ±k Lord', cls: 'Maia', icon: 'ğŸ‘ï¸', trait: 'Pasif: TÃ¼m Nazgul +1 tespit' },
+  'saruman': { name: 'Saruman Beyaz', cls: 'Maia', icon: '🔱', trait: 'Yol Bozar (CD:2)' },
+  'sauron': { name: 'Sauron, Karanlık Lord', cls: 'Maia', icon: 'ğŸ‘ï¸', trait: 'Pasif: Tüm Nazgul +1 tespit' },
 };
 
-// Helper: uid â†’ gÃ¶rÃ¼nen isim
+// Helper: uid → görünen isim
 function unitName(uid) {
   return UNIT_DISPLAY[uid]?.name || uid;
 }
-// Helper: uid â†’ icon
+// Helper: uid → icon
 function unitIcon(uid) {
-  return UNIT_DISPLAY[uid]?.icon || 'ğŸ”¹';
+  return UNIT_DISPLAY[uid]?.icon || '🔹';
 }
 
 // â”€â”€ Region canvas positions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -136,7 +136,7 @@ const state = {
   side: null, playerId: null,
   connected: false, gamePhase: 'LOBBY',
   turn: 1, timerInterval: null,
-  turnStartedAt: null,   // Unix epoch (server'dan) â€” clock-based timer iÃ§in
+  turnStartedAt: null,   // Unix epoch (server'dan) — clock-based timer için
   turnDuration: TURN_SECONDS, // saniye
   units: {}, regions: {}, paths: {},
   selectedUnit: null, selectedUnitData: null,
@@ -176,43 +176,43 @@ function connectSSE() {
     state.connected = false;
     const dot = document.querySelector('#connection-status .status-dot');
     if (dot) dot.className = 'status-dot';
-    showToast('SSE baÄŸlantÄ±sÄ± kesildi, yeniden baÄŸlanÄ±lÄ±yor...', 'warning');
+    showToast('SSE bağlantısı kesildi, yeniden bağlanılıyor...', 'warning');
   };
 }
 
 // â”€â”€ Server Event Dispatcher â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function handleServerEvent(msg) {
-  // Sunucu bazÄ± event'leri 'event' fieldÄ±yla gÃ¶nderir, bazÄ±larÄ± 'type' ile
+  // Sunucu bazı event'leri 'event' fieldıyla gönderir, bazıları 'type' ile
   const evtType = msg.event || msg.type;
   switch (evtType) {
 
-    // â”€â”€ Tur sonu dÃ¼nya durumu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Tur sonu dünya durumu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'WorldStateSnapshot': {
-      // Hareket eden birimleri tespit et (snapshot geldiÄŸinde)
+      // Hareket eden birimleri tespit et (snapshot geldiğinde)
       Object.entries(msg.units || {}).forEach(([uid, newU]) => {
         const oldU = state.units[uid];
         if (oldU && newU.region && oldU.region && oldU.region !== newU.region) {
           const oldName = REGION_META[oldU.region]?.name || oldU.region;
           const newName = REGION_META[newU.region]?.name || newU.region;
           addEventLog(
-            `${unitIcon(uid)} ${unitName(uid)} taÅŸÄ±ndÄ±: ${oldName} â†’ ${newName}`,
+            `${unitIcon(uid)} ${unitName(uid)} taşındı: ${oldName} → ${newName}`,
             'event-movement'
           );
         }
-        // GÃ¼Ã§ deÄŸiÅŸimini tespit et
+        // Güç değişimini tespit et
         if (oldU && typeof newU.strength === 'number' && typeof oldU.strength === 'number'
           && newU.strength < oldU.strength) {
           const dmg = oldU.strength - newU.strength;
           addEventLog(
-            `ğŸ’¥ ${unitName(uid)} hasar aldÄ±: ${oldU.strength} â†’ ${newU.strength} (âˆ’${dmg})`,
+            `💥 ${unitName(uid)} hasar aldı: ${oldU.strength} → ${newU.strength} (−${dmg})`,
             'event-combat'
           );
         }
-        // StatÃ¼ deÄŸiÅŸimini tespit et
+        // Statü değişimini tespit et
         if (oldU && newU.status && oldU.status !== newU.status) {
-          const statusLabel = { DESTROYED: 'YOK EDÄ°LDÄ°', RESPAWNING: 'YENÄ°DEN DOÄUYOR', ACTIVE: 'AKTÄ°F' };
+          const statusLabel = { DESTROYED: 'YOK EDİLDİ', RESPAWNING: 'YENİDEN DOÄUYOR', ACTIVE: 'AKTİF' };
           addEventLog(
-            `${unitIcon(uid)} ${unitName(uid)} durumu deÄŸiÅŸti â†’ ${statusLabel[newU.status] || newU.status}`,
+            `${unitIcon(uid)} ${unitName(uid)} durumu değişti → ${statusLabel[newU.status] || newU.status}`,
             newU.status === 'DESTROYED' ? 'event-combat' : 'event-movement'
           );
         }
@@ -232,16 +232,16 @@ function handleServerEvent(msg) {
         if (rbElem) rbElem.textContent = REGION_META[msg.ringBearerRegion]?.name || msg.ringBearerRegion;
       }
 
-      // â”€â”€ Timer senkronizasyonu â€” server'Ä±n turnStartedAt'Ä±ndan gerÃ§ek zamanlÄ± hesapla
+      // â”€â”€ Timer senkronizasyonu — server'ın turnStartedAt'ından gerçek zamanlı hesapla
       {
         const turnDur = msg.turnDurationSec || TURN_SECONDS;
         if (msg.turnStartedAt) {
-          // Sunucunun mutlak baÅŸlangÄ±Ã§ zamanÄ±nÄ± kaydet â€” tÃ¼m client'lar aynÄ± referansa gÃ¶re sayar
+          // Sunucunun mutlak başlangıç zamanını kaydet — tüm client'lar aynı referansa göre sayar
           state.turnStartedAt = msg.turnStartedAt;
           state.turnDuration = turnDur;
           syncTimerFromClock();
         } else if (typeof msg.turnRemainingSec === 'number') {
-          // turnStartedAt yoksa remaining'den geriye dÃ¶nÃ¼k hesapla
+          // turnStartedAt yoksa remaining'den geriye dönük hesapla
           state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, msg.turnRemainingSec));
           state.turnDuration = turnDur;
           syncTimerFromClock();
@@ -251,48 +251,48 @@ function handleServerEvent(msg) {
       drawMap();
       if (prevTurn > 0) {
         addEventLog(
-          `â±ï¸ Tur ${prevTurn} tamamlandÄ± â€” Tur ${state.turn}/${MAX_TURNS} baÅŸladÄ±`,
+          `â±ï¸ Tur ${prevTurn} tamamlandı — Tur ${state.turn}/${MAX_TURNS} başladı`,
           'event-turn'
         );
       }
       break;
     }
 
-    // â”€â”€ YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± hareketi (YalnÄ±zca IÅŸÄ±k TarafÄ±) â”€â”€â”€â”€
+    // â”€â”€ Yüzük Taşıyıcısı hareketi (Yalnızca Işık Tarafı) â”€â”€â”€â”€
     case 'RingBearerMoved':
       state.ringBearerRegion = msg.trueRegion;
       $('rb-location').classList.remove('hidden');
       $('rb-location-text').textContent = REGION_META[msg.trueRegion]?.name || msg.trueRegion;
       drawMap();
       addEventLog(
-        `ğŸ’ Frodo Baggins ilerledi â†’ ${REGION_META[msg.trueRegion]?.name || msg.trueRegion}`,
+        `ğŸ’ Frodo Baggins ilerledi → ${REGION_META[msg.trueRegion]?.name || msg.trueRegion}`,
         'event-movement'
       );
       break;
 
-    // â”€â”€ YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± tespit (YalnÄ±zca KaranlÄ±k Taraf) â”€â”€â”€
+    // â”€â”€ Yüzük Taşıyıcısı tespit (Yalnızca Karanlık Taraf) â”€â”€â”€
     case 'RingBearerDetected':
       state.lastDetectedRegion = msg.regionId;
       $('detection-status').classList.remove('hidden');
       $('detection-text').textContent = REGION_META[msg.regionId]?.name || msg.regionId;
       drawMap();
       addEventLog(
-        `ğŸ‘ï¸ SAURON'UN GÃ–ZÃœ AÃ‡ILDI! YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± tespit edildi: ${REGION_META[msg.regionId]?.name || msg.regionId}`,
+        `ğŸ‘ï¸ SAURON'UN GÖZÜ AÇILDI! Yüzük Taşıyıcısı tespit edildi: ${REGION_META[msg.regionId]?.name || msg.regionId}`,
         'event-detection'
       );
-      showToast('Sauron\'un GÃ¶zÃ¼ AÃ§Ä±ldÄ±!', 'warning');
+      showToast('Sauron\'un Gözü Açıldı!', 'warning');
       break;
 
-    // â”€â”€ YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± gÃ¶zetleme yolunda yakalandÄ± â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Yüzük Taşıyıcısı gözetleme yolunda yakalandı â”€â”€â”€â”€â”€â”€â”€â”€
     case 'RingBearerSpotted':
       addEventLog(
-        `ğŸ” YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± gÃ¶zetleme altÄ±ndaki yoldan geÃ§ti: ${msg.pathId} â€” AÃ‡IÄA Ã‡IKTI!`,
+        `ğŸ” Yüzük Taşıyıcısı gözetleme altındaki yoldan geçti: ${msg.pathId} — AÇIÄA ÇIKTI!`,
         'event-detection'
       );
-      showToast('YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± aÃ§Ä±ÄŸa Ã§Ä±ktÄ±!', 'warning');
+      showToast('Yüzük Taşıyıcısı açığa çıktı!', 'warning');
       break;
 
-    // â”€â”€ Yol durum deÄŸiÅŸikliÄŸi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Yol durum değişikliği â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'PathStatusChanged': {
       const pathData = state.paths[msg.pathId] || {};
       if (state.paths[msg.pathId]) {
@@ -301,48 +301,48 @@ function handleServerEvent(msg) {
       drawMap();
       const pathMeta = PATHS.find(p => p.id === msg.pathId);
       const pathLabel = pathMeta
-        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} â†” ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
+        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} ↔ ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
         : msg.pathId;
       const statusMap = {
-        BLOCKED: 'ğŸš« ENGELLENDÄ°',
-        THREATENED: 'âš ï¸ TEHDÄ°T ALTINDA',
-        OPEN: 'âœ… AÃ§Ä±ldÄ±',
-        TEMPORARILY_OPEN: 'ğŸ”µ GeÃ§ici AÃ§Ä±k (Gandalf, 2 tur)',
+        BLOCKED: '🚫 ENGELLENDİ',
+        THREATENED: 'âš ï¸ TEHDİT ALTINDA',
+        OPEN: '✅ Açıldı',
+        TEMPORARILY_OPEN: '🔵 Geçici Açık (Gandalf, 2 tur)',
       };
       const statusLabel = statusMap[msg.newStatus || msg.status] || (msg.newStatus || msg.status || '?');
       const survNote = (msg.surveillanceLevel > 0)
-        ? ` | GÃ¶zetleme: ${'ğŸ”´'.repeat(msg.surveillanceLevel)}`
+        ? ` | Gözetleme: ${'🔴'.repeat(msg.surveillanceLevel)}`
         : '';
-      addEventLog(`ğŸ›¤ï¸ ${pathLabel} â€” ${statusLabel}${survNote}`, 'event-path');
+      addEventLog(`ğŸ›¤ï¸ ${pathLabel} — ${statusLabel}${survNote}`, 'event-path');
       break;
     }
 
-    // â”€â”€ Yol kalÄ±cÄ± bozuldu (Saruman) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Yol kalıcı bozuldu (Saruman) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'PathCorrupted': {
       const pathMeta = PATHS.find(p => p.id === msg.pathId);
       const pathLabel = pathMeta
-        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} â†” ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
+        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} ↔ ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
         : msg.pathId;
       if (state.paths[msg.pathId]) {
         state.paths[msg.pathId].surveillanceLevel = 3;
       }
       drawMap();
       addEventLog(
-        `ğŸ”± Saruman yolu kalÄ±cÄ± olarak bozdu! ${pathLabel} â€” GÃ¶zetleme MAX (ğŸ”´ğŸ”´ğŸ”´)`,
+        `🔱 Saruman yolu kalıcı olarak bozdu! ${pathLabel} — Gözetleme MAX (🔴🔴🔴)`,
         'event-detection'
       );
       showToast('Saruman bir yolu bozdu!', 'warning');
       break;
     }
 
-    // â”€â”€ Rota tamamlandÄ± â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Rota tamamlandı â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'RouteComplete': {
       const uname = unitName(msg.unitId);
       const uicon = unitIcon(msg.unitId);
       const region = REGION_META[msg.region]?.name || msg.region || '?';
-      addEventLog(`${uicon} ${uname} rotasÄ±nÄ± tamamladÄ± â€” ${region}`, 'event-movement');
+      addEventLog(`${uicon} ${uname} rotasını tamamladı — ${region}`, 'event-movement');
       if (msg.region === 'mount-doom' || msg.unitId === 'ring-bearer') {
-        showToast(`${uname} Kader DaÄŸÄ±'na ulaÅŸtÄ±!`, 'success');
+        showToast(`${uname} Kader Dağı'na ulaştı!`, 'success');
       }
       break;
     }
@@ -353,13 +353,13 @@ function handleServerEvent(msg) {
       const uicon = unitIcon(msg.unitId);
       const pathMeta = PATHS.find(p => p.id === msg.pathId);
       const pathLabel = pathMeta
-        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} â†” ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
+        ? `${REGION_META[pathMeta.from]?.name || pathMeta.from} ↔ ${REGION_META[pathMeta.to]?.name || pathMeta.to}`
         : (msg.pathId || '?');
       addEventLog(
-        `ğŸš« ${uicon} ${uname} rotasÄ± engellendi! Yol: ${pathLabel} â€” Birim beklemede.`,
+        `🚫 ${uicon} ${uname} rotası engellendi! Yol: ${pathLabel} — Birim beklemede.`,
         'event-detection'
       );
-      showToast(`${uname} rotasÄ± engellendi!`, 'warning');
+      showToast(`${uname} rotası engellendi!`, 'warning');
       break;
     }
 
@@ -368,62 +368,62 @@ function handleServerEvent(msg) {
       const uname = unitName(msg.unitId);
       const uicon = unitIcon(msg.unitId);
       addEventLog(
-        `âš ï¸ ${uicon} ${uname} rotasÄ± tehlikeye girdi â€” yeniden rota atanmasÄ± gerekebilir`,
+        `âš ï¸ ${uicon} ${uname} rotası tehlikeye girdi — yeniden rota atanması gerekebilir`,
         'event-detection'
       );
       break;
     }
 
-    // â”€â”€ SavaÅŸ sonucu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Savaş sonucu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'BattleResolved': {
       const regionName = REGION_META[msg.regionId]?.name || msg.regionId;
-      const attackerStr = msg.attackerPower ? ` (GÃ¼Ã§: ${msg.attackerPower})` : '';
-      const defenderStr = msg.defenderPower ? ` (GÃ¼Ã§: ${msg.defenderPower})` : '';
+      const attackerStr = msg.attackerPower ? ` (Güç: ${msg.attackerPower})` : '';
+      const defenderStr = msg.defenderPower ? ` (Güç: ${msg.defenderPower})` : '';
       if (msg.attackerWon) {
         addEventLog(
-          `âš”ï¸ SAVAÅ â€” ${regionName}: SaldÄ±rgan KAZANDI!${attackerStr} vs SavunmacÄ±${defenderStr}. BÃ¶lge el deÄŸiÅŸtirdi.`,
+          `âš”ï¸ SAVAÅ — ${regionName}: Saldırgan KAZANDI!${attackerStr} vs Savunmacı${defenderStr}. Bölge el değiştirdi.`,
           'event-combat'
         );
       } else {
         addEventLog(
-          `ğŸ›¡ï¸ SAVAÅ â€” ${regionName}: SavunmacÄ± tuttu!${defenderStr} Her saldÄ±rgan âˆ’1 gÃ¼Ã§ kaybetti.`,
+          `ğŸ›¡ï¸ SAVAÅ — ${regionName}: Savunmacı tuttu!${defenderStr} Her saldırgan −1 güç kaybetti.`,
           'event-combat'
         );
       }
       if (msg.regionId === 'isengard' && msg.attackerWon) {
-        addEventLog(`ğŸ”± Ä°sengard dÃ¼ÅŸtÃ¼ â€” Saruman kalÄ±cÄ± olarak devre dÄ±ÅŸÄ±!`, 'event-detection');
-        showToast('Ä°sengard dÃ¼ÅŸtÃ¼! Saruman devre dÄ±ÅŸÄ±!', 'success');
+        addEventLog(`🔱 İsengard düştü — Saruman kalıcı olarak devre dışı!`, 'event-detection');
+        showToast('İsengard düştü! Saruman devre dışı!', 'success');
       }
       if (msg.regionId === 'mount-doom') {
-        showToast('Kader DaÄŸÄ±\'nda savaÅŸ!', 'warning');
+        showToast('Kader Dağı\'nda savaş!', 'warning');
       }
       drawMap();
       break;
     }
 
-    // â”€â”€ BÃ¶lge kontrolÃ¼ deÄŸiÅŸti â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Bölge kontrolü değişti â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'RegionControlChanged': {
       const regionName = REGION_META[msg.regionId]?.name || msg.regionId;
-      const ctrlLabel = msg.newController === 'SHADOW' ? 'ğŸ”´ KaranlÄ±k Taraf'
-        : msg.newController === 'FREE_PEOPLES' ? 'ğŸ”µ Ã–zgÃ¼r Halklar' : 'âšª TarafsÄ±z';
-      addEventLog(`ğŸ³ï¸ ${regionName} kontrolÃ¼: ${ctrlLabel}`, 'event-path');
+      const ctrlLabel = msg.newController === 'SHADOW' ? '🔴 Karanlık Taraf'
+        : msg.newController === 'FREE_PEOPLES' ? '🔵 Özgür Halklar' : '⚪ Tarafsız';
+      addEventLog(`ğŸ³ï¸ ${regionName} kontrolü: ${ctrlLabel}`, 'event-path');
       if (state.regions[msg.regionId]) state.regions[msg.regionId].controlledBy = msg.newController;
       drawMap();
       break;
     }
 
-    // â”€â”€ Birim yeniden doÄŸdu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // â”€â”€ Birim yeniden doğdu â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     case 'UnitRespawned': {
       const uname = unitName(msg.unitId);
       const uicon = unitIcon(msg.unitId);
-      const region = REGION_META[msg.region]?.name || msg.region || 'ev bÃ¶lgesi';
+      const region = REGION_META[msg.region]?.name || msg.region || 'ev bölgesi';
       if (state.units[msg.unitId]) {
         state.units[msg.unitId].status = 'ACTIVE';
         state.units[msg.unitId].region = msg.region || state.units[msg.unitId].region;
         state.units[msg.unitId].strength = msg.strength || state.units[msg.unitId].strength;
       }
       renderUnits();
-      addEventLog(`âœ¨ ${uicon} ${uname} yeniden doÄŸdu â€” ${region} (Tam gÃ¼Ã§)`, 'event-movement');
+      addEventLog(`✨ ${uicon} ${uname} yeniden doğdu — ${region} (Tam güç)`, 'event-movement');
       break;
     }
 
@@ -436,10 +436,10 @@ function handleServerEvent(msg) {
       break;
     }
 
-    // â”€â”€ Oyun SÄ±fÄ±rlandÄ± (baÅŸka bir istemci/sunucu reset attÄ±) â”€â”€
+    // â”€â”€ Oyun Sıfırlandı (başka bir istemci/sunucu reset attı) â”€â”€
     case 'GameReset': {
-      addEventLog('ğŸ”„ Oyun sunucu tarafÄ±ndan sÄ±fÄ±rlandÄ± â€” login ekranÄ±na dÃ¶nÃ¼lÃ¼yor...', 'event-gameover');
-      showToast('ğŸ”„ Oyun sÄ±fÄ±rlandÄ±!', 'warning');
+      addEventLog('🔄 Oyun sunucu tarafından sıfırlandı — login ekranına dönülüyor...', 'event-gameover');
+      showToast('🔄 Oyun sıfırlandı!', 'warning');
       setTimeout(() => resetGame(), 1500);
       break;
     }
@@ -461,7 +461,7 @@ function handleServerEvent(msg) {
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PARÃ‡A 2 â€” Init, Login, Timer, Orders
+// PARÇA 2 — Init, Login, Timer, Orders
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -479,9 +479,9 @@ document.addEventListener('DOMContentLoaded', () => {
   canvas.addEventListener('mouseleave', () => {
     state.hoveredRegion = null;
     $('map-tooltip').classList.add('hidden');
-    // drawMap() â€” animasyon dÃ¶ngÃ¼sÃ¼ zaten sÃ¼rekli Ã§iziÃ¼tor
+    // drawMap() — animasyon döngüsü zaten sürekli çiziütor
   });
-  window.addEventListener('resize', () => { resizeCanvas(); }); // animasyon dÃ¶ngÃ¼sÃ¼ Ã§iziyor
+  window.addEventListener('resize', () => { resizeCanvas(); }); // animasyon döngüsü çiziyor
 });
 
 function resizeCanvas() {
@@ -525,7 +525,7 @@ function selectSide(side) {
 
 async function joinGame() {
   const pid = $('player-id-input').value.trim();
-  if (!pid || !state.side) { showToast('Taraf seÃ§in ve isim girin', 'error'); return; }
+  if (!pid || !state.side) { showToast('Taraf seçin ve isim girin', 'error'); return; }
 
   const prefix = state.side === 'FREE_PEOPLES' ? 'light-' : 'dark-';
   state.playerId = pid.startsWith(prefix) ? pid : prefix + pid;
@@ -556,22 +556,22 @@ async function joinGame() {
     $('rb-location').classList.remove('hidden');
   }
 
-  // Canvas zaten DOMContentLoaded'da baÅŸlatÄ±ldÄ±
+  // Canvas zaten DOMContentLoaded'da başlatıldı
   connectSSE();
-  // startTimer kaldÄ±rÄ±ldÄ± â€” fetchGameState'ten gelen turnStartedAt ile senkron baÅŸlar
+  // startTimer kaldırıldı — fetchGameState'ten gelen turnStartedAt ile senkron başlar
   fetchGameState();
   requestAnalysis();
-  startMapAnimation(); // ğŸ¬ SÃ¼rekli animasyon dÃ¶ngÃ¼sÃ¼
+  startMapAnimation(); // ğŸ¬ Sürekli animasyon döngüsü
 }
 
 
-// â”€â”€ Clock-based timer â€” sunucunun turnStartedAt'Ä±ndan gerÃ§ek zamanlÄ± hesaplama â”€
-// TÃ¼m client'lar (farklÄ± sekmeler dahil) bu fonksiyon sayesinde senkron kalÄ±r.
+// â”€â”€ Clock-based timer — sunucunun turnStartedAt'ından gerçek zamanlı hesaplama â”€
+// Tüm client'lar (farklı sekmeler dahil) bu fonksiyon sayesinde senkron kalır.
 let _timerIntervalId = null;
 
 function syncTimerFromClock() {
   clearInterval(_timerIntervalId);
-  _tickTimer(); // hemen bir kez Ã§iz
+  _tickTimer(); // hemen bir kez çiz
   _timerIntervalId = setInterval(_tickTimer, 1000);
   state.timerInterval = _timerIntervalId;
 }
@@ -587,13 +587,10 @@ function _tickTimer() {
   }
 }
 
-// startTimer â€” turnStartedAt yoksa fallback olarak Ã§alÄ±ÅŸÄ±r
-function startTimer(remaining) {
-  const from = (typeof remaining === 'number' && remaining > 0) ? remaining : TURN_SECONDS;
-  if (!state.turnStartedAt) {
-    state.turnStartedAt = Math.floor(Date.now() / 1000) - (TURN_SECONDS - from);
-    state.turnDuration = TURN_SECONDS;
-  }
+// startTimer — turnStartedAt üzerinden senkronize edilir
+function startTimer(turnStartedAt, duration) {
+  state.turnStartedAt = turnStartedAt;
+  state.turnDuration = duration || TURN_SECONDS;
   syncTimerFromClock();
 }
 
@@ -616,26 +613,16 @@ async function fetchGameState() {
     state.units = d.units || {};
     state.regions = d.regions || {};
     state.paths = d.paths || {};
-    // Light Side sees ring bearer true region via lightView
     if (d.lightView?.ringBearerRegion) state.ringBearerRegion = d.lightView.ringBearerRegion;
     else if (d.ringBearerRegion) state.ringBearerRegion = d.ringBearerRegion;
-    // Default: ring bearer starts at The Shire
-    if (!state.ringBearerRegion && state.side !== 'SHADOW') state.ringBearerRegion = 'the-shire';
+
     if (d.lastDetectedRegion) state.lastDetectedRegion = d.lastDetectedRegion;
     $('turn-number').textContent = state.turn;
 
-    // Sync timer: turnStartedAt Ã¼zerinden gerÃ§ek zamanlÄ± hesapla
+    // Sync timer: turnStartedAt üzerinden gerçek zamanlı hesapla
     if (d.turnStartedAt) {
-      state.turnStartedAt = d.turnStartedAt;
-      state.turnDuration = d.turnDurationSec || TURN_SECONDS;
-      syncTimerFromClock();
+      startTimer(d.turnStartedAt, d.turnDurationSec);
       console.log(`[timer] synced from /game/state via turnStartedAt=${d.turnStartedAt}`);
-    } else if (typeof d.turnRemainingSec === 'number') {
-      const dur = d.turnDurationSec || TURN_SECONDS;
-      state.turnStartedAt = Math.floor(Date.now() / 1000) - (dur - Math.max(1, d.turnRemainingSec));
-      state.turnDuration = dur;
-      syncTimerFromClock();
-      console.log(`[timer] synced from /game/state via turnRemainingSec=${d.turnRemainingSec}`);
     }
 
     renderUnits();
@@ -649,7 +636,7 @@ async function fetchGameState() {
 // â”€â”€ Submit Order â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function doSubmitOrder() {
   if (!state.selectedUnit || !state.selectedOrder) {
-    showToast('Birim ve emir seÃ§in', 'error'); return;
+    showToast('Birim ve emir seçin', 'error'); return;
   }
   const payload = collectOrderPayload();
   const order = {
@@ -670,15 +657,15 @@ async function doSubmitOrder() {
       state.pendingOrders[state.selectedUnit] = state.selectedOrder;
       const uDisplayName = unitName(state.selectedUnit);
       const orderName = state.selectedOrder?.replace(/_/g, ' ');
-      showToast(`â³ Emir kuyruÄŸa alÄ±ndÄ±: ${orderName}. Tur bittiÄŸinde uygulanacak.`, 'success');
-      addEventLog(`âœ”ï¸ Emir gÃ¶nderildi â†’ ${uDisplayName}: ${orderName} (tur ${state.turn} sonunda uygulanacak)`, 'info');
+      showToast(`â ³ Emir kuyruğa alındı: ${orderName}. Tur bittiğinde uygulanacak.`, 'success');
+      addEventLog(`âœ”ï¸  Emir gönderildi → ${uDisplayName}: ${orderName} (tur ${state.turn} sonunda uygulanacak)`, 'info');
       renderUnits(); // refresh to show pending badge
       closeOrderPanel();
     } else {
       const err = await r.json().catch(() => ({}));
       showToast(`Hata: ${err.error || r.status}`, 'error');
     }
-  } catch (e) { showToast('Sunucu baÄŸlantÄ± hatasÄ±', 'error'); }
+  } catch (e) { showToast('Sunucu bağlantı hatası', 'error'); }
 }
 
 function collectOrderPayload() {
@@ -712,9 +699,9 @@ function closeOrderPanel() {
   drawMap();
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PARÃ‡A 3 â€” Canvas Render, Unit Panel, Map Events
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
+// PARÇA 3 — Canvas Render, Unit Panel, Map Events
+// â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• â• 
 
 function drawMap() {
   if (!ctx) return;
@@ -726,27 +713,26 @@ function drawMap() {
   ctx.fillStyle = '#06060e';
   ctx.fillRect(0, 0, W, H);
 
-  // â”€â”€ 0. Nazgul Tespit AlanÄ± (Detection Range HalkasÄ±) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Nazgul'larÄ±n bulunduÄŸu bÃ¶lge etrafÄ±nda yarÄ±-saydam kÄ±rmÄ±zÄ±/turuncu halkalar
+  // ── 0. Nazgul Tespit Alanı (Detection Range Halkası) ──────────
+  // Nazgul'ların bulunduğu bölge etrafında yarı-saydam kırmızı/turuncu halkalar
   const sauronInMordor = (() => {
-    const s = state.units['sauron'];
-    return s && s.region === 'mordor' && (s.status || 'ACTIVE') === 'ACTIVE';
+    // Dynamically identify Sauron: Maia in Mordor
+    const s = Object.values(state.units).find(u => u.isMaia && u.region === 'mordor' && u.class !== 'Nazgul');
+    return s && (s.status || 'ACTIVE') === 'ACTIVE';
   })();
 
   Object.entries(state.units).forEach(([uid, u]) => {
-    const disp = UNIT_DISPLAY[uid];
-    if (!disp || disp.cls !== 'Nazgul') return;
+    if (u.class !== 'Nazgul') return;
     if (!u.region || (u.status && u.status !== 'ACTIVE')) return;
     const pos = REGION_POS[u.region];
     if (!pos) return;
 
     // Sauron pasif etkisi: +1 range
-    const baseCfg = { 'witch-king': 2, 'nazgul-2': 1, 'nazgul-3': 1 };
-    const baseRange = baseCfg[uid] || 1;
+    const baseRange = u.detectionRange || 1;
     const effectiveRange = baseRange + (sauronInMordor ? 1 : 0);
     const sx = pos.x * scaleX, sy = pos.y * scaleY;
 
-    // Ä°Ã§ halka â€” birim konumu
+    // İç halka — birim konumu
     const pulse = 0.7 + 0.3 * Math.sin(now / 800);
     ctx.beginPath();
     ctx.arc(sx, sy, 26, 0, Math.PI * 2);
@@ -756,7 +742,7 @@ function drawMap() {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // DÄ±ÅŸ halka â€” tespit menzili gÃ¶stergesi (range > 1 ise daha bÃ¼yÃ¼k)
+    // Dış halka — tespit menzili göstergesi (range > 1 ise daha büyük)
     if (effectiveRange >= 2) {
       ctx.beginPath();
       ctx.arc(sx, sy, 52, 0, Math.PI * 2);
@@ -771,7 +757,7 @@ function drawMap() {
     ctx.font = `bold ${Math.round(9 * scaleX)}px Inter, sans-serif`;
     ctx.fillStyle = 'rgba(220, 80, 80, 0.9)';
     ctx.textAlign = 'center';
-    ctx.fillText(`ğŸ‘ ${effectiveRange}`, sx, sy - 28);
+    ctx.fillText(`ğŸ‘  ${effectiveRange}`, sx, sy - 28);
   });
 
   // â”€â”€ 1. Yollar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -788,44 +774,44 @@ function drawMap() {
     ctx.lineTo(bx, by);
 
     if (highlighted) {
-      // SeÃ§ili yol â€” altÄ±n
+      // Seçili yol — altın
       ctx.strokeStyle = '#c9a84c';
       ctx.lineWidth = 3.5;
       ctx.setLineDash([]);
       ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 8;
     } else if (pd.status === 'BLOCKED') {
-      // ENGELLEND â€” kalÄ±n kÄ±rmÄ±zÄ± kesik Ã§izgi
+      // ENGELLEND — kalın kırmızı kesik çizgi
       const blPulse = 0.6 + 0.4 * Math.sin(now / 600);
       ctx.strokeStyle = `rgba(160, 0, 0, ${blPulse})`;
       ctx.lineWidth = 4;
       ctx.setLineDash([6, 4]);
       ctx.shadowColor = '#8b0000'; ctx.shadowBlur = 10;
     } else if (pd.status === 'TEMPORARILY_OPEN') {
-      // GANDALF AÃ‡TI â€” mavi parlayan
+      // GANDALF AÇTI — mavi parlayan
       ctx.strokeStyle = '#4a90d9';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([8, 3]);
       ctx.shadowColor = '#4a90d9'; ctx.shadowBlur = 12;
     } else if (pd.status === 'THREATENED') {
-      // TEHDÄ°T ALTINDA â€” turuncu
+      // TEHDİT ALTINDA — turuncu
       ctx.strokeStyle = '#c04000';
       ctx.lineWidth = 2;
       ctx.setLineDash([5, 3]);
       ctx.shadowColor = '#c04000'; ctx.shadowBlur = 5;
     } else if (pd.surveillanceLevel >= 3) {
-      // SARUMAN BOZDU â€” mor
+      // SARUMAN BOZDU — mor
       ctx.strokeStyle = '#8040c0';
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 2]);
       ctx.shadowColor = '#8040c0'; ctx.shadowBlur = 8;
     } else if (pd.surveillanceLevel === 2) {
-      // YÃ¼ksek gÃ¶zetleme â€” kÄ±rmÄ±zÄ±msÄ±
+      // Yüksek gözetleme — kırmızımsı
       ctx.strokeStyle = '#a03060';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
       ctx.shadowColor = 'none'; ctx.shadowBlur = 0;
     } else if (pd.surveillanceLevel === 1) {
-      // DÃ¼ÅŸÃ¼k gÃ¶zetleme
+      // Düşük gözetleme
       ctx.strokeStyle = '#603040';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([3, 4]);
@@ -840,21 +826,21 @@ function drawMap() {
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 
-    // Yol Ã¼zerinde kÃ¼Ã§Ã¼k gÃ¶zetleme seviyesi etiketi
+    // Yol üzerinde küçük gözetleme seviyesi etiketi
     if (pd.surveillanceLevel > 0 && pd.status !== 'BLOCKED') {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
       ctx.font = `${Math.round(8 * scaleX)}px Inter, sans-serif`;
       ctx.fillStyle = pd.surveillanceLevel >= 3 ? '#c080ff' : pd.surveillanceLevel === 2 ? '#ff80a0' : '#a06080';
       ctx.textAlign = 'center';
-      ctx.fillText('ğŸ”´'.repeat(pd.surveillanceLevel), mx, my - 4);
+      ctx.fillText('🔴'.repeat(pd.surveillanceLevel), mx, my - 4);
     }
 
-    // BLOCKED ikon â€” yol ortasÄ±nda kÄ±rmÄ±zÄ± engel
+    // BLOCKED ikon — yol ortasında kırmızı engel
     if (pd.status === 'BLOCKED') {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
       ctx.font = `${Math.round(14 * scaleX)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('ğŸš«', mx, my + 4);
+      ctx.fillText('🚫', mx, my + 4);
     }
 
     // TEMPORARILY_OPEN ikon
@@ -862,11 +848,11 @@ function drawMap() {
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
       ctx.font = `${Math.round(13 * scaleX)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('âœ¨', mx, my + 4);
+      ctx.fillText('✨', mx, my + 4);
     }
   });
 
-  // â”€â”€ 2. BÃ¶lgeler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 2. Bölgeler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const [id, pos] of Object.entries(REGION_POS)) {
     const meta = REGION_META[id] || {};
     const rd = state.regions[id] || {};
@@ -874,7 +860,7 @@ function drawMap() {
     const sx = pos.x * scaleX, sy = pos.y * scaleY;
     const radius = hovered ? 18 : 15;
 
-    // Ã–zel bÃ¶lge Ä±ÅŸÄ±ltÄ±sÄ±
+    // Özel bölge ışıltısı
     if (id === 'mount-doom') {
       ctx.shadowColor = '#ff4400'; ctx.shadowBlur = hovered ? 25 : 15;
     } else if (id === 'the-shire') {
@@ -892,7 +878,7 @@ function drawMap() {
     ctx.fillStyle = TERRAIN_COLOR[meta.terrain] || '#1a1a2a';
     ctx.fill();
 
-    // Kontrol sÄ±nÄ±rÄ±
+    // Kontrol sınırı
     if (rd.controlledBy === 'SHADOW') ctx.strokeStyle = '#8b0000';
     else if (rd.controlledBy === 'FREE_PEOPLES') ctx.strokeStyle = '#2d7a4a';
     else ctx.strokeStyle = hovered ? '#c9a84c' : '#333';
@@ -900,7 +886,7 @@ function drawMap() {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Tahkim halkasÄ± â€” altÄ±n + kalkan ikonu
+    // Tahkim halkası — altın + kalkan ikonu
     if (rd.fortified) {
       ctx.beginPath();
       ctx.arc(sx, sy, radius + 5, 0, Math.PI * 2);
@@ -911,17 +897,17 @@ function drawMap() {
       ctx.setLineDash([]);
       ctx.font = `${Math.round(10 * scaleX)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('ğŸ›¡ï¸', sx + radius - 2, sy - radius + 2);
+      ctx.fillText('ğŸ›¡ï¸ ', sx + radius - 2, sy - radius + 2);
     }
 
-    // BÃ¶lge label
+    // Bölge label
     ctx.fillStyle = hovered ? '#e8e0cc' : '#7a7080';
     ctx.font = `${hovered ? 'bold ' : ''}${Math.round(9 * scaleX)}px Inter, sans-serif`;
     ctx.textAlign = 'center';
     ctx.shadowBlur = 0;
     ctx.fillText(meta.name || id, sx, sy + radius + 11);
 
-    // BÃ¶lge threat seviyesi (tehdit > 2 ise kÄ±rmÄ±zÄ± sayÄ± gÃ¶ster)
+    // Bölge threat seviyesi (tehdit > 2 ise kırmızı sayı göster)
     const threat = rd.threatLevel ?? meta.threat ?? 0;
     if (threat >= 2) {
       ctx.font = `bold ${Math.round(8 * scaleX)}px Inter, sans-serif`;
@@ -930,8 +916,8 @@ function drawMap() {
     }
   }
 
-  // â”€â”€ 3. Birimler â€” ikon + mini gÃ¶sterge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // BÃ¶lge baÅŸÄ±na birimleri grupla
+  // â”€â”€ 3. Birimler — ikon + mini gösterge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Bölge başına birimleri grupla
   const byRegion = {};
   Object.entries(state.units).forEach(([uid, u]) => {
     if (!u.region) return;
@@ -946,13 +932,14 @@ function drawMap() {
     const total = units.length;
 
     units.forEach(({ uid, u }, i) => {
-      const disp = UNIT_DISPLAY[uid] || { icon: 'ğŸ”¹' };
+      const disp = UNIT_DISPLAY[uid] || { icon: '🔹' };
       const angle = total > 1 ? (i / total) * Math.PI * 2 - Math.PI / 2 : -Math.PI / 2;
       const dist = total > 1 ? 20 : 0;
       const ux = sx + Math.cos(angle) * dist;
       const uy = sy + Math.sin(angle) * dist;
-      const isShadow = (u.side === 'SHADOW') ||
-        (['witch-king', 'nazgul-2', 'nazgul-3', 'saruman', 'sauron', 'uruk-hai-legion'].includes(uid));
+      // Shadow if it is Nazgul or Maia in shadow side, but we can't easily check side here.
+      // u.class handles the generic fallback for styling correctly now or by the u.side if present.
+      const isShadow = (u.side === 'SHADOW') || (u.class === 'Nazgul' || (u.isMaia && uid !== 'gandalf') || uid === 'uruk-hai-legion');
 
       // Mini arka plan dairesi
       ctx.beginPath();
@@ -968,15 +955,15 @@ function drawMap() {
       ctx.textAlign = 'center';
       ctx.fillText(disp.icon, ux, uy - 6);
 
-      // Pending emir gÃ¶stergesi
+      // Pending emir göstergesi
       if (state.pendingOrders[uid]) {
         ctx.font = `${Math.round(7 * scaleX)}px Inter, sans-serif`;
-        ctx.fillText('â³', ux + 8, uy - 14);
+        ctx.fillText('â ³', ux + 8, uy - 14);
       }
     });
   });
 
-  // â”€â”€ 4. Ring Bearer â€” IÅŸÄ±k TarafÄ± â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 4. Ring Bearer — Işık Tarafı â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (state.side !== 'SHADOW' && state.ringBearerRegion) {
     const pos = REGION_POS[state.ringBearerRegion];
     if (pos) {
@@ -989,14 +976,14 @@ function drawMap() {
       ctx.shadowColor = '#ffeb3b'; ctx.shadowBlur = 16;
       ctx.stroke();
       ctx.shadowBlur = 0;
-      // YÃ¼zÃ¼k simgesi
+      // Yüzük simgesi
       ctx.font = `${Math.round(12 * scaleX)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('ğŸ’', sx, sy + 4);
+      ctx.fillText('ğŸ’ ', sx, sy + 4);
     }
   }
 
-  // â”€â”€ 5. Son Tespit Konumu â€” KaranlÄ±k Taraf â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 5. Son Tespit Konumu — Karanlık Taraf â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (state.side === 'SHADOW' && state.lastDetectedRegion) {
     const pos = REGION_POS[state.lastDetectedRegion];
     if (pos) {
@@ -1013,11 +1000,11 @@ function drawMap() {
       ctx.shadowBlur = 0;
       ctx.font = `${Math.round(11 * scaleX)}px Inter, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText('ğŸ‘ï¸', sx, sy + 4);
+      ctx.fillText('ğŸ‘ ï¸ ', sx, sy + 4);
     }
   }
 
-  // â”€â”€ 6. Sauron Pasif Etki GÃ¶stergesi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // â”€â”€ 6. Sauron Pasif Etki Göstergesi â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (sauronInMordor) {
     const pos = REGION_POS['mordor'];
     if (pos) {
@@ -1035,10 +1022,10 @@ function drawMap() {
   }
 }
 
-// â”€â”€ Animasyon dÃ¶ngÃ¼sÃ¼ â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ Animasyon döngüsü â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _mapAnimHandle = null;
 function startMapAnimation() {
-  if (_mapAnimHandle) return; // zaten Ã§alÄ±ÅŸÄ±yor
+  if (_mapAnimHandle) return; // zaten çalışıyor
   function loop() {
     drawMap();
     _mapAnimHandle = requestAnimationFrame(loop);
@@ -1058,9 +1045,9 @@ function renderUnits() {
   const isMyUnit = (uid, u) => {
     if (u.side) return u.side === mySide;
     const id = uid.toLowerCase();
-    if (mySide === 'SHADOW')
-      return id.includes('nazgul') || id === 'saruman' || id === 'sauron' || id === 'uruk-hai-legion' || id === 'witch-king';
-    return !id.includes('nazgul') && id !== 'saruman' && id !== 'sauron' && id !== 'uruk-hai-legion' && id !== 'witch-king';
+    const isShadow = u.class === 'Nazgul' || u.class === 'Uruk-hai Legion' || (u.isMaia && id !== 'gandalf') || ['witch-king', 'saruman', 'sauron', 'uruk-hai-legion'].includes(id);
+    if (mySide === 'SHADOW') return isShadow;
+    return !isShadow;
   };
 
   let count = 0;
@@ -1068,7 +1055,7 @@ function renderUnits() {
     if (!isMyUnit(uid, u)) return;
     count++;
 
-    const disp = UNIT_DISPLAY[uid] || { name: uid, cls: '?', icon: 'ğŸ”¹', trait: '' };
+    const disp = UNIT_DISPLAY[uid] || { name: uid, cls: '?', icon: '🔹', trait: '' };
     const maxStr = 10;
     const curStr = u.strength ?? 0;
     const pct = Math.max(0, Math.min(100, Math.round((curStr / maxStr) * 100)));
@@ -1077,7 +1064,7 @@ function renderUnits() {
     const pending = state.pendingOrders[uid];
 
     const barColor = pct > 60 ? '#2d7a4a' : pct > 30 ? '#c9a84c' : '#8b0000';
-    const statusLabel = { ACTIVE: 'Aktif', DESTROYED: 'Yok Edildi', RESPAWNING: 'Yeniden DoÄŸuyor' };
+    const statusLabel = { ACTIVE: 'Aktif', DESTROYED: 'Yok Edildi', RESPAWNING: 'Yeniden Doğuyor' };
     const statusCls = st === 'ACTIVE' ? 'status-active' : st === 'RESPAWNING' ? 'status-respawning' : 'status-destroyed';
     const regionName = u.region ? (REGION_META[u.region]?.name || u.region) : (uid === 'ring-bearer' && state.side !== 'SHADOW' ? (REGION_META[state.ringBearerRegion]?.name || '?') : '???');
     const isShadow = mySide === 'SHADOW';
@@ -1103,7 +1090,7 @@ function renderUnits() {
       </div>
       <div class="uc-location">ğŸ“ ${regionName}</div>
       <div class="uc-str-row">
-        <span class="uc-str-label">GÃ¼Ã§</span>
+        <span class="uc-str-label">Güç</span>
         <div class="strength-bar">
           <div class="strength-fill" style="width:${pct}%;background:${barColor}"></div>
         </div>
@@ -1117,7 +1104,7 @@ function renderUnits() {
   });
 
   if (count === 0) {
-    list.innerHTML = '<div class="uc-loading">Birimler yÃ¼kleniyor...</div>';
+    list.innerHTML = '<div class="uc-loading">Birimler yükleniyor...</div>';
   }
 }
 
@@ -1148,7 +1135,7 @@ function onMapMouseMove(e) {
     tip.style.left = (e.clientX - rect.left + 10) + 'px';
     tip.style.top = (e.clientY - rect.top - 10) + 'px';
     tip.classList.remove('hidden');
-    $('path-info-text').textContent = `${meta.name || hit} â€” ${meta.terrain || ''} bÃ¶lgesi`;
+    $('path-info-text').textContent = `${meta.name || hit} — ${meta.terrain || ''} bölgesi`;
   } else {
     tip.classList.add('hidden');
   }
@@ -1166,7 +1153,7 @@ function onMapClick(e) {
 function onUnitSelect(uid, u, st) {
   const status = st || (u.status || 'ACTIVE').toUpperCase();
   if (status !== 'ACTIVE') {
-    showToast(`${unitName(uid)} â€” ${status === 'DESTROYED' ? 'Yok edildi' : 'Yeniden doÄŸuyor'}, emir verilemez`, 'error');
+    showToast(`${unitName(uid)} — ${status === 'DESTROYED' ? 'Yok edildi' : 'Yeniden doğuyor'}, emir verilemez`, 'error');
     return;
   }
   state.selectedUnit = uid;
@@ -1211,7 +1198,7 @@ function _safeShowPanel(uid, orders) {
     const panel = $('order-panel');
     const content = $('order-content');
     if (panel && content) {
-      content.innerHTML = `<div style="color:#ff4444;padding:0.5rem">âš ï¸ Panel hatasÄ±: ${e.message}</div>`;
+      content.innerHTML = `<div style="color:#ff4444;padding:0.5rem">âš ï¸ Panel hatası: ${e.message}</div>`;
       panel.classList.remove('hidden');
     }
   }
@@ -1248,40 +1235,40 @@ const ORDER_NEEDS = {
 };
 const ORDER_ICON = {
   ASSIGN_ROUTE: 'ğŸ—ºï¸', REINFORCE_REGION: 'ğŸ°', ATTACK_REGION: 'âš”ï¸',
-  FORTIFY_REGION: 'ğŸ›¡ï¸', BLOCK_PATH: 'ğŸš«', SEARCH_PATH: 'ğŸ”',
-  DEPLOY_NAZGUL: 'ğŸ‘ï¸', MAIA_ABILITY: 'âœ¨',
+  FORTIFY_REGION: 'ğŸ›¡ï¸', BLOCK_PATH: '🚫', SEARCH_PATH: 'ğŸ”',
+  DEPLOY_NAZGUL: 'ğŸ‘ï¸', MAIA_ABILITY: '✨',
 };
 
-// ORDER_DESC: TÃ¼rkÃ§e aÃ§Ä±klama
+// ORDER_DESC: Türkçe açıklama
 const ORDER_DESC = {
-  ASSIGN_ROUTE: 'Rota ata â€” birim her tur bir adÄ±m ilerler',
-  REINFORCE_REGION: 'Takviye â€” komÅŸu bÃ¶lgeye geÃ§',
-  ATTACK_REGION: 'SaldÄ±r â€” komÅŸu dÃ¼ÅŸman bÃ¶lgesine saldÄ±r',
-  FORTIFY_REGION: 'Tahkim et â€” bu bÃ¶lgeye +2 savunma, 2 tur',
-  BLOCK_PATH: 'Yolu Engelle â€” yolun ucundayken yolu kapat',
-  SEARCH_PATH: 'Yolu Tara â€” gÃ¶zetleme seviyesini arttÄ±r',
-  DEPLOY_NAZGUL: 'Nazgul KonuÅŸlandÄ±r â€” hedef bÃ¶lgeye gÃ¶nder',
-  MAIA_ABILITY: 'Maia YeteneÄŸi â€” Gandalf: AÃ§ / Saruman: Boz',
+  ASSIGN_ROUTE: 'Rota ata — birim her tur bir adım ilerler',
+  REINFORCE_REGION: 'Takviye — komşu bölgeye geç',
+  ATTACK_REGION: 'Saldır — komşu düşman bölgesine saldır',
+  FORTIFY_REGION: 'Tahkim et — bu bölgeye +2 savunma, 2 tur',
+  BLOCK_PATH: 'Yolu Engelle — yolun ucundayken yolu kapat',
+  SEARCH_PATH: 'Yolu Tara — gözetleme seviyesini arttır',
+  DEPLOY_NAZGUL: 'Nazgul Konuşlandır — hedef bölgeye gönder',
+  MAIA_ABILITY: 'Maia Yeteneği — Gandalf: Aç / Saruman: Boz',
 };
 
 function showOrderPanel(uid, orders) {
-  const disp = UNIT_DISPLAY[uid] || { name: uid, cls: '', icon: 'ğŸ”¹', trait: '' };
+  const disp = UNIT_DISPLAY[uid] || { name: uid, cls: '', icon: '🔹', trait: '' };
   const content = $('order-content');
   const unit = state.selectedUnitData || {};
 
-  // BaÅŸlÄ±ÄŸÄ± gÃ¼ncelle â€” X kapat dÃ¼ÄŸmesi ekle
+  // Başlığı güncelle — X kapat düğmesi ekle
   $('order-panel-title').innerHTML =
     `${disp.icon} <span style="font-family:'Cinzel',serif;color:var(--gold)">${disp.name}</span>`
     + `<span class="op-class-badge">${disp.cls}</span>`
-    + `<button class="op-close-btn" onclick="closeOrderPanel()" title="Kapat">âœ•</button>`;
+    + `<button class="op-close-btn" onclick="closeOrderPanel()" title="Kapat">✕</button>`;
 
-  // Ring Bearer'Ä±n gerÃ§ek konumu
+  // Ring Bearer'ın gerçek konumu
   let unitRegion = unit.region || null;
   if (!unitRegion && uid === 'ring-bearer' && state.side !== 'SHADOW') {
     unitRegion = state.ringBearerRegion || 'the-shire';
   }
 
-  // KomÅŸu yollar ve bÃ¶lgeler
+  // Komşu yollar ve bölgeler
   const adjacentPaths = unitRegion
     ? PATHS.filter(p => p.from === unitRegion || p.to === unitRegion)
     : PATHS;
@@ -1293,15 +1280,15 @@ function showOrderPanel(uid, orders) {
     const pd = state.paths[p.id] || {};
     const f = REGION_META[p.from]?.name || p.from;
     const t = REGION_META[p.to]?.name || p.to;
-    const tag = pd.status === 'BLOCKED' ? ' ğŸš«' : pd.status === 'THREATENED' ? ' âš ï¸' : pd.surveillanceLevel > 0 ? ` ğŸ”´Ã—${pd.surveillanceLevel}` : '';
-    return `<option value="${p.id}">${f} â†’ ${t}${tag}</option>`;
+    const tag = pd.status === 'BLOCKED' ? ' 🚫' : pd.status === 'THREATENED' ? ' âš ï¸' : pd.surveillanceLevel > 0 ? ` 🔴×${pd.surveillanceLevel}` : '';
+    return `<option value="${p.id}">${f} → ${t}${tag}</option>`;
   }).join('');
 
   const makeRegionOpts = fn => Object.entries(REGION_META)
     .filter(([id]) => fn(id))
     .map(([id, m]) => {
       const rd = state.regions[id] || {};
-      const ctrl = rd.controlledBy === 'SHADOW' ? 'ğŸ”´' : rd.controlledBy === 'FREE_PEOPLES' ? 'ğŸ”µ' : 'âšª';
+      const ctrl = rd.controlledBy === 'SHADOW' ? '🔴' : rd.controlledBy === 'FREE_PEOPLES' ? '🔵' : '⚪';
       return `<option value="${id}">${ctrl} ${m.name}</option>`;
     }).join('');
 
@@ -1310,7 +1297,7 @@ function showOrderPanel(uid, orders) {
   const regionOptsAdj = makeRegionOpts(id => adjacentRegionIds.has(id));
   const regionOptsAll = makeRegionOpts(id => id !== unitRegion);
 
-  // Konum satÄ±rÄ±
+  // Konum satırı
   const locLine = unitRegion
     ? `<div class="op-location">ğŸ“ <strong>${REGION_META[unitRegion]?.name || unitRegion}</strong></div>`
     : '';
@@ -1323,63 +1310,63 @@ function showOrderPanel(uid, orders) {
   (orders || []).forEach(o => {
     const isRoute = o === 'ASSIGN_ROUTE';
     html += `<button class="order-chip" data-order="${o}" onclick="selectOrderType('${o}')">
-      <span class="oc-icon">${ORDER_ICON[o] || 'ğŸ“‹'}</span>
+      <span class="oc-icon">${ORDER_ICON[o] || '📋'}</span>
       <span class="oc-label">${o.replace(/_/g, ' ')}</span>
     </button>`;
   });
   html += `</div>`;
 
-  // AÃ§Ä±klama alanÄ± (seÃ§ime gÃ¶re dolacak)
+  // Açıklama alanı (seçime göre dolacak)
   html += `<div id="op-desc" class="op-desc hidden"></div>`;
 
-  // Input alanlarÄ± â€” tek standart yapÄ±
+  // Input alanları — tek standart yapı
   html += `<div id="order-inputs" class="op-inputs hidden">
 
     <div id="input-route" class="op-input-block hidden">
-      <div class="op-input-header">ğŸ—ºï¸ Rota OluÅŸtur
+      <div class="op-input-header">ğŸ—ºï¸ Rota Oluştur
         <button class="btn-undo" onclick="clearRoute()" style="margin-left:auto">ğŸ—‘ï¸ Temizle</button>
       </div>
       <div id="route-chain-hint" class="op-route-hint">
-        BaÅŸlangÄ±Ã§: <strong>${unitRegion ? (REGION_META[unitRegion]?.name || unitRegion) : '?'}</strong>
-        â€” Sonraki adÄ±m iÃ§in aÅŸaÄŸÄ±daki yollardan birini seÃ§:
+        Başlangıç: <strong>${unitRegion ? (REGION_META[unitRegion]?.name || unitRegion) : '?'}</strong>
+        — Sonraki adım için aşağıdaki yollardan birini seç:
       </div>
       <div id="route-chip-grid" class="op-path-grid"></div>
       <div id="route-selected" class="op-route-selected">
-        <span style="color:#4a4060;font-size:0.68rem">HenÃ¼z yol seÃ§ilmedi...</span>
+        <span style="color:#4a4060;font-size:0.68rem">Henüz yol seçilmedi...</span>
       </div>
     </div>
 
     <div id="input-region-attack" class="op-input-block hidden">
-      <div class="op-input-header">âš”ï¸ SaldÄ±rÄ± Hedefi</div>
+      <div class="op-input-header">âš”ï¸ Saldırı Hedefi</div>
       <select class="order-select" id="order-region-select"
         onchange="const btn=$('dyn-submit');if(btn)btn.disabled=!this.value">
-        <option value="">â€” BÃ¶lge seÃ§in â€”</option>${regionOptsAdj || regionOptsAll}
+        <option value="">— Bölge seçin —</option>${regionOptsAdj || regionOptsAll}
       </select>
     </div>
 
     <div id="input-region" class="op-input-block hidden">
-      <div class="op-input-header">ğŸ° Hedef BÃ¶lge</div>
+      <div class="op-input-header">ğŸ° Hedef Bölge</div>
       <select class="order-select" id="order-region-select-move"
         onchange="const btn=$('dyn-submit');if(btn)btn.disabled=!this.value">
-        <option value="">â€” BÃ¶lge seÃ§in â€”</option>${regionOptsAdj || regionOptsAll}
+        <option value="">— Bölge seçin —</option>${regionOptsAdj || regionOptsAll}
       </select>
     </div>
 
     <div id="input-path" class="op-input-block hidden">
       <div class="op-input-header">ğŸ›¤ï¸ Hedef Yol</div>
       ${adjacentPaths.length === 0
-      ? '<p class="op-warn">âš ï¸ Birim bir yolun ucunda deÄŸil â€” Ã¶nce birimi yol uÃ§ noktasÄ±na taÅŸÄ±yÄ±n.</p>'
-      : `<p style="font-size:0.68rem;color:var(--text-muted);margin-bottom:0.3rem">${adjacentPaths.length} yol eriÅŸilebilir</p>`
+      ? '<p class="op-warn">âš ï¸ Birim bir yolun ucunda değil — önce birimi yol uç noktasına taşıyın.</p>'
+      : `<p style="font-size:0.68rem;color:var(--text-muted);margin-bottom:0.3rem">${adjacentPaths.length} yol erişilebilir</p>`
     }
       <select class="order-select" id="order-path-select" onchange="const btn=$('dyn-submit');if(btn)btn.disabled=!this.value">
-        <option value="">â€” Yol seÃ§in â€”</option>${pathOptsAdj || pathOptsAll}
+        <option value="">— Yol seçin —</option>${pathOptsAdj || pathOptsAll}
       </select>
     </div>
 
     <div id="input-fortify" class="op-input-block hidden">
       <div class="op-input-header">ğŸ° Tahkim Et</div>
       <p style="font-size:0.72rem;color:var(--text-muted)">
-        <strong style="color:var(--gold)">${REGION_META[unitRegion]?.name || unitRegion || '?'}</strong> bÃ¶lgesi tahkim edilecek (+2 savunma, 2 tur sÃ¼rer).
+        <strong style="color:var(--gold)">${REGION_META[unitRegion]?.name || unitRegion || '?'}</strong> bölgesi tahkim edilecek (+2 savunma, 2 tur sürer).
       </p>
     </div>
 
@@ -1387,9 +1374,9 @@ function showOrderPanel(uid, orders) {
 
   <div class="op-footer">
     <button class="btn-primary op-submit" id="dyn-submit" onclick="doSubmitOrder()" disabled>
-      âš¡ Emri GÃ¶nder
+      âš¡ Emri Gönder
     </button>
-    <button class="btn-secondary" onclick="closeOrderPanel()">âœ• Ä°ptal</button>
+    <button class="btn-secondary" onclick="closeOrderPanel()">✕ İptal</button>
   </div>`;
 
   content.innerHTML = html;
@@ -1402,7 +1389,7 @@ function showOrderPanel(uid, orders) {
 
 
 
-// Called when ASSIGN_ROUTE is selected â€” renders paths from currentRegion only
+// Called when ASSIGN_ROUTE is selected — renders paths from currentRegion only
 function renderRouteStep() {
   // Ring Bearer: use true region from state (Light Side knows it); other units: use their public region
   const isRB = state.selectedUnit === 'ring-bearer';
@@ -1425,7 +1412,7 @@ function renderRouteStep() {
 
   if (hint) {
     const regionName = currentRegion ? (REGION_META[currentRegion]?.name || currentRegion) : '?';
-    hint.innerHTML = `Konum: <strong>${regionName}</strong> â€” sonraki adÄ±mÄ± seÃ§:`;
+    hint.innerHTML = `Konum: <strong>${regionName}</strong> — sonraki adımı seç:`;
   }
 
   const pd = state.paths;
@@ -1434,14 +1421,14 @@ function renderRouteStep() {
     const tLabel = REGION_META[p.to]?.name || p.to;
     const dest = p.from === currentRegion ? tLabel : fLabel;
     const pstate = pd[p.id] || {};
-    const tag = pstate.status === 'BLOCKED' ? ' ğŸš«' : pstate.status === 'THREATENED' ? ' âš ï¸' : pstate.surveillanceLevel > 0 ? ` ğŸ”´Ã—${pstate.surveillanceLevel}` : '';
+    const tag = pstate.status === 'BLOCKED' ? ' 🚫' : pstate.status === 'THREATENED' ? ' âš ï¸' : pstate.surveillanceLevel > 0 ? ` 🔴×${pstate.surveillanceLevel}` : '';
     const f = fLabel.replace(/"/g, '&quot;');
     const t = tLabel.replace(/"/g, '&quot;');
     return `<button class="path-chip" data-pid="${p.id}" data-from="${p.from}" data-to="${p.to}" onclick="addRouteStep(this)">
-      ${fLabel} â†’ ${tLabel}${tag}
-      <span style="color:var(--light-blue);font-size:0.6rem">â†’ ${dest}</span>
+      ${fLabel} → ${tLabel}${tag}
+      <span style="color:var(--light-blue);font-size:0.6rem">→ ${dest}</span>
     </button>`;
-  }).join('') || '<span style="color:#f87171;font-size:0.72rem">âš ï¸ Bu konumdan devam edilecek yol bulunamadÄ±.</span>';
+  }).join('') || '<span style="color:#f87171;font-size:0.72rem">âš ï¸ Bu konumdan devam edilecek yol bulunamadı.</span>';
 }
 
 // Adds a path to the route chain and advances to the next region
@@ -1466,7 +1453,7 @@ function selectOrderType(o) {
   document.querySelectorAll('.order-chip').forEach(c =>
     c.classList.toggle('active', c.dataset.order === o));
 
-  // Op-desc aÃ§
+  // Op-desc aç
   const desc = $('op-desc');
   if (desc) {
     desc.textContent = ORDER_DESC[o] || '';
@@ -1476,7 +1463,7 @@ function selectOrderType(o) {
   const inputs = $('order-inputs');
   if (inputs) inputs.classList.remove('hidden');
 
-  // Hangi input bloÄŸunu gÃ¶ster
+  // Hangi input bloğunu göster
   const showMap = {
     ASSIGN_ROUTE: 'route',
     BLOCK_PATH: 'path',
@@ -1496,14 +1483,14 @@ function selectOrderType(o) {
   if (o === 'ASSIGN_ROUTE') renderRouteStep();
 
   const btn = $('dyn-submit');
-  // FORTIFY ve ASSIGN_ROUTE Ã¶zel durumlar
+  // FORTIFY ve ASSIGN_ROUTE özel durumlar
   if (btn) btn.disabled = o === 'ASSIGN_ROUTE' ? true : o === 'FORTIFY_REGION' ? false : false;
 }
 
 
 function selectOrder(o) { selectOrderType(o); }
 
-// Toggle a path chip in the route picker â€” receives the button element
+// Toggle a path chip in the route picker — receives the button element
 function toggleRoutePath(el) {
   const pid = el.dataset.pid;
   if (!pid) return;
@@ -1522,12 +1509,12 @@ function toggleRoutePath(el) {
     sel.innerHTML = state.selectedRoute.map((p, i) => {
       const ph = PATHS.find(x => x.id === p);
       const lbl = ph
-        ? `${REGION_META[ph.from]?.name || ph.from}â†’${REGION_META[ph.to]?.name || ph.to}`
+        ? `${REGION_META[ph.from]?.name || ph.from}→${REGION_META[ph.to]?.name || ph.to}`
         : p;
-      return `<span class="route-tag">${i + 1}. ${lbl} <span style="cursor:pointer;opacity:.7" onclick="removeRoutePath('${p}')">âœ•</span></span>`;
+      return `<span class="route-tag">${i + 1}. ${lbl} <span style="cursor:pointer;opacity:.7" onclick="removeRoutePath('${p}')">✕</span></span>`;
     }).join('');
     if (state.selectedRoute.length === 0)
-      sel.innerHTML = '<span style="color:#7a7080;font-size:0.75rem">HenÃ¼z yol seÃ§ilmedi</span>';
+      sel.innerHTML = '<span style="color:#7a7080;font-size:0.75rem">Henüz yol seçilmedi</span>';
   }
 }
 
@@ -1609,7 +1596,7 @@ function _refreshRouteSelected() {
 
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// PARÃ‡A 4 â€” Analysis, Game Over, Toast, Event Log, Helpers
+// PARÇA 4 — Analysis, Game Over, Toast, Event Log, Helpers
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async function requestAnalysis() {
@@ -1646,7 +1633,7 @@ function renderAnalysis() {
     (state.analysisData.byUnit || []).forEach(u => {
       html += `<div class="intercept-card">
         <div class="intercept-unit">${u.unitId}</div>
-        <div class="intercept-target">â†’ ${REGION_META[u.targetRegion]?.name || u.targetRegion}
+        <div class="intercept-target">→ ${REGION_META[u.targetRegion]?.name || u.targetRegion}
           (${u.turnsToIntercept} tur, skor: ${(u.score * 100).toFixed(0)}%)</div>
       </div>`;
     });
@@ -1667,12 +1654,12 @@ function handleGameOver(msg) {
   $('game-over-title').textContent = msg.winner === 'DRAW' ? 'Beraberlik!'
     : isWinner ? 'Zafer!' : 'Yenilgi!';
   $('game-over-subtitle').textContent =
-    msg.winner === 'LIGHT_SIDE' ? 'YÃ¼zÃ¼k imha edildi â€” Ã–zgÃ¼r Halklar kazandÄ±!' :
-      msg.winner === 'DARK_SIDE' ? 'YÃ¼zÃ¼k TaÅŸÄ±yÄ±cÄ±sÄ± yakalandÄ± â€” GÃ¶lge kazandÄ±!' :
-        'Maksimum tur sayÄ±sÄ±na ulaÅŸÄ±ldÄ±.';
+    msg.winner === 'LIGHT_SIDE' ? 'Yüzük imha edildi — Özgür Halklar kazandı!' :
+      msg.winner === 'DARK_SIDE' ? 'Yüzük Taşıyıcısı yakalandı — Gölge kazandı!' :
+        'Maksimum tur sayısına ulaşıldı.';
   $('game-over-cause').textContent = msg.cause || '';
   $('game-over-overlay').classList.remove('hidden');
-  addEventLog(`ğŸ Oyun bitti: ${msg.winner} â€” ${msg.cause}`, 'event-gameover');
+  addEventLog(`ğŸ Oyun bitti: ${msg.winner} — ${msg.cause}`, 'event-gameover');
 }
 
 
@@ -1680,12 +1667,12 @@ function resetGame() {
   if (state.eventSource) state.eventSource.close();
   clearInterval(state.timerInterval);
   clearInterval(_timerIntervalId);
-  // Animasyon dÃ¶ngÃ¼sÃ¼nÃ¼ durdur
+  // Animasyon döngüsünü durdur
   if (_mapAnimHandle) { cancelAnimationFrame(_mapAnimHandle); _mapAnimHandle = null; }
   Object.assign(state, {
     connected: false, gamePhase: 'LOBBY', turn: 1,
     units: {}, regions: {}, paths: {},
-    turnStartedAt: null, turnDuration: TURN_SECONDS, // timer sÄ±fÄ±rla
+    turnStartedAt: null, turnDuration: TURN_SECONDS, // timer sıfırla
     ringBearerRegion: null, lastDetectedRegion: null,
     selectedUnit: null, availableOrders: [], selectedOrder: null,
     highlightedPaths: [], analysisData: null,
@@ -1701,12 +1688,12 @@ function addEventLog(msg, cssClass = 'info') {
   if (!log) return;
   const el = document.createElement('div');
   el.className = `event-item event-${cssClass}`;
-  // Zaman damgasÄ±
+  // Zaman damgası
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
   el.innerHTML = `<span class="event-turn">[T${state.turn}]</span><span class="event-time">${timeStr}</span><span class="event-msg">${msg}</span>`;
   log.prepend(el);
-  // Max 80 kayÄ±t tut
+  // Max 80 kayıt tut
   while (log.children.length > 80) log.removeChild(log.lastChild);
 }
 

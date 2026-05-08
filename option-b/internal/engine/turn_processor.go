@@ -79,6 +79,16 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 			if !ok {
 				return
 			}
+			
+			if order.Order.OrderType == game.StartGameOrder {
+				tp.processStartGame()
+				continue
+			}
+			if order.Order.OrderType == game.ResetGameOrder {
+				tp.processResetGame()
+				continue
+			}
+
 			if tp.gameOver {
 				continue // drop orders once game is over
 			}
@@ -105,6 +115,98 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 			}
 		}
 	}
+}
+
+func (tp *TurnProcessor) processStartGame() {
+	state := tp.cache.GetSnapshot()
+	state.Session.Phase = game.InProgress
+	state.TurnStartedAt = time.Now().Unix()
+	tp.cache.Update(state)
+
+	tp.emitWorldStateSnapshot(state)
+	log.Printf("[StartGame] broadcasted WorldStateSnapshot turnStartedAt=%d", state.TurnStartedAt)
+}
+
+func (tp *TurnProcessor) processResetGame() {
+	state := tp.cache.GetSnapshot()
+
+	// Reset session
+	tp.session.Phase = game.WaitingForPlayers
+	tp.session.CurrentTurn = 1
+
+	// Dynamic Ring Bearer start region
+	ringBearerStart := ""
+	
+	// Reset each unit to its starting state from UnitConfigs
+	resetUnits := make(map[string]game.UnitSnapshot, len(state.Units))
+	for id, cfg := range tp.unitConfigs {
+		region := cfg.StartRegion
+		if cfg.Class == game.RingBearer {
+			ringBearerStart = cfg.StartRegion
+			region = ""
+		}
+		resetUnits[id] = game.UnitSnapshot{
+			ID:           id,
+			Region:       region,
+			Strength:     cfg.Strength,
+			Status:       game.Active,
+			RespawnTurns: 0,
+			Route:        nil,
+			RouteIdx:     0,
+			Cooldown:     0,
+		}
+	}
+
+	// Reset regions: clear control and fortification
+	resetRegions := make(map[string]game.RegionState, len(state.Regions))
+	for id, reg := range state.Regions {
+		reg.ControlledBy = ""
+		reg.Fortified = false
+		reg.FortifyTurns = 0
+		reg.ThreatLevel = 0
+		resetRegions[id] = reg
+	}
+
+	// Reset paths: clear surveillance and blocks
+	resetPaths := make(map[string]game.PathState, len(state.Paths))
+	for id, p := range state.Paths {
+		p.Status = game.Open
+		p.SurveillanceLevel = 0
+		p.BlockedBy = ""
+		p.TempOpenTurns = 0
+		p.Corrupted = false
+		resetPaths[id] = p
+	}
+
+	// Update RingBearer state tracker
+	tp.ringBearer.TrueRegion = ringBearerStart
+	tp.ringBearer.Exposed = false
+	tp.ringBearer.Route = nil
+	tp.ringBearer.RouteIdx = 0
+	tp.ringBearer.LastDetectedTurn = 0
+	tp.ringBearer.LastDetectedRegion = ""
+
+	newState := state
+	newState.Turn = 1
+	newState.TurnStartedAt = time.Now().Unix()
+	newState.Units = resetUnits
+	newState.Regions = resetRegions
+	newState.Paths = resetPaths
+	newState.Session = *tp.session
+	newState.Session.CurrentTurn = 1
+	newState.LightView = game.LightSideView{RingBearerRegion: ringBearerStart}
+	newState.DarkView = game.DarkSideView{RingBearerRegion: "", LastDetectedRegion: "", LastDetectedTurn: 0}
+	tp.cache.Update(newState)
+
+	// Broadcast reset event to all SSE clients via existing game.broadcast topic
+	tp.emit("game.broadcast", map[string]interface{}{
+		"type":    "GameReset",
+		"turn":    1,
+		"message": "Oyun sıfırlandı.",
+	})
+	tp.gameOver = false
+
+	log.Println("[reset] Game state reset to turn 1")
 }
 
 // processTurn executes all 13 steps of turn processing
