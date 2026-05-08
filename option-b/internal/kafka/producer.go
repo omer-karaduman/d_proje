@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"ring-of-the-middle-earth/internal/game"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Producer handles sending messages to Kafka using Exactly-Once Semantics

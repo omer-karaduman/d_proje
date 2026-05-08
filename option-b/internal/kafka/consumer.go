@@ -7,8 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"ring-of-the-middle-earth/internal/game"
+
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // Consumer handles reading from game.orders.raw Kafka topic
@@ -67,7 +68,7 @@ func (c *Consumer) RecoverState() (*game.WorldStateCache, error) {
 	err = tempConsumer.Assign([]kafka.TopicPartition{{
 		Topic:     stringPtr("game.session"),
 		Partition: 0,
-		Offset:    kafka.OffsetBeginning,
+		Offset:    kafka.Offset(kafka.OffsetBeginning),
 	}})
 	if err != nil {
 		return nil, err
@@ -86,13 +87,25 @@ func (c *Consumer) RecoverState() (*game.WorldStateCache, error) {
 			break
 		}
 
-		var snapshot map[string]interface{}
-		if err := c.avroHelper.Deserialize(msg.Value, &snapshot); err == nil {
-			jsonBytes, _ := json.Marshal(snapshot)
-			var cache game.WorldStateCache
-			if err := json.Unmarshal(jsonBytes, &cache); err == nil {
-				lastSnapshot = &cache
+		var jsonBytes []byte
+
+		// avroHelper nil olabilir — önce kontrol et
+		if c.avroHelper != nil {
+			var snapshot map[string]interface{}
+			if err := c.avroHelper.Deserialize(msg.Value, &snapshot); err == nil {
+				jsonBytes, _ = json.Marshal(snapshot)
 			}
+		}
+		if jsonBytes == nil {
+			// Avro yoksa veya deserialize başarısızsa ham JSON dene
+			jsonBytes = msg.Value
+		}
+
+		var cache game.WorldStateCache
+		if err := json.Unmarshal(jsonBytes, &cache); err == nil {
+			lastSnapshot = &cache
+		} else {
+			log.Printf("RecoverState: unmarshal failed: %v", err)
 		}
 	}
 
@@ -143,7 +156,6 @@ func (c *Consumer) Start(ctx context.Context) {
 				}
 				log.Printf("Consumer: ProcessMessage called with: %s", string(jsonBytes))
 				c.processor.ProcessMessage(jsonBytes)
-
 
 			case kafka.AssignedPartitions:
 				log.Printf("Consumer: partitions assigned: %v", e.Partitions)

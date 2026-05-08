@@ -30,7 +30,7 @@ type TurnProcessor struct {
 
 // ValidatedOrder represents an order that passed Topology 1 validation
 type ValidatedOrder struct {
-	Order         game.Order
+	Order          game.Order
 	RouteRiskScore *int
 }
 
@@ -79,7 +79,7 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 			if !ok {
 				return
 			}
-			
+
 			if order.Order.OrderType == game.StartGameOrder {
 				tp.processStartGame()
 				continue
@@ -103,12 +103,12 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 				log.Println("TurnProcessor: game over, stopping turn loop")
 				return
 			}
-			
+
 			state := tp.cache.GetSnapshot()
 			if state.Session.Phase != game.InProgress {
 				continue
 			}
-			
+
 			elapsed := time.Now().Unix() - state.TurnStartedAt
 			if elapsed >= int64(tp.session.TurnDuration) {
 				tp.processTurn()
@@ -136,7 +136,7 @@ func (tp *TurnProcessor) processResetGame() {
 
 	// Dynamic Ring Bearer start region
 	ringBearerStart := ""
-	
+
 	// Reset each unit to its starting state from UnitConfigs
 	resetUnits := make(map[string]game.UnitSnapshot, len(state.Units))
 	for id, cfg := range tp.unitConfigs {
@@ -386,9 +386,17 @@ func (tp *TurnProcessor) stepReinforce(state game.WorldStateCache, orders map[st
 			if _, ok := state.Regions[target]; !ok {
 				continue
 			}
-			// Adjacency check: unit must be at an endpoint of a path leading to target
-			if target != unit.Region && !tp.graph.AreAdjacent(unit.Region, target) {
-				log.Printf("TurnProcessor: REINFORCE rejected — %s not adjacent to %s", unit.Region, target)
+
+			// Ring Bearer'ın public Region'ı daima "" — komşuluk testi için
+			// gerçek konumu (TrueRegion) kullan. Diğer birimler için unit.Region yeterli.
+			cfg := tp.unitConfigs[unitID]
+			effectiveRegion := unit.Region
+			if cfg.Class == game.RingBearer {
+				effectiveRegion = tp.ringBearer.TrueRegion
+			}
+
+			if effectiveRegion != target && !tp.graph.AreAdjacent(effectiveRegion, target) {
+				log.Printf("TurnProcessor: REINFORCE rejected — %s not adjacent to %s", effectiveRegion, target)
 				continue
 			}
 			unit.Region = target
@@ -398,6 +406,7 @@ func (tp *TurnProcessor) stepReinforce(state game.WorldStateCache, orders map[st
 				"unitId": unitID,
 				"to":     target,
 			})
+
 		case game.DeployNazgulOrder:
 			target, _ := order.Payload["targetRegion"].(string)
 			if _, ok := state.Regions[target]; !ok {
@@ -632,13 +641,22 @@ func (tp *TurnProcessor) stepCombat(state game.WorldStateCache, orders map[strin
 		if target == "" {
 			continue
 		}
-		// Check attacker adjacency: must be at or adjacent to target region
+
 		attackerUnit, unitOK := state.Units[unitID]
 		if !unitOK || attackerUnit.Status != game.Active {
 			continue
 		}
-		if attackerUnit.Region != target && !tp.graph.AreAdjacent(attackerUnit.Region, target) {
-			log.Printf("TurnProcessor: ATTACK rejected — %s (%s) not adjacent to %s", unitID, attackerUnit.Region, target)
+
+		// Ring Bearer'ın public Region'ı daima "" — komşuluk testi için
+		// gerçek konumu (TrueRegion) kullan.
+		cfg := tp.unitConfigs[unitID]
+		effectiveRegion := attackerUnit.Region
+		if cfg.Class == game.RingBearer {
+			effectiveRegion = tp.ringBearer.TrueRegion
+		}
+
+		if effectiveRegion != target && !tp.graph.AreAdjacent(effectiveRegion, target) {
+			log.Printf("TurnProcessor: ATTACK rejected — %s (%s) not adjacent to %s", unitID, effectiveRegion, target)
 			continue
 		}
 		attacksByRegion[target] = append(attacksByRegion[target], unitID)
@@ -854,7 +872,7 @@ func (tp *TurnProcessor) stepDetection(state game.WorldStateCache, turn int) gam
 			"regionId": result.TrueRegion,
 			"turn":     turn,
 		})
-		
+
 		// Trigger Interception Analysis (Pipeline 2) asynchronously per spec
 		if tp.pipeline2 != nil {
 			tp.pipeline2.TriggerAsync(state, result.TrueRegion)
@@ -953,18 +971,17 @@ func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 
 	// Include ringBearerRegion (Light Side sees true region; stripRingBearer removes it for Dark Side)
 	tp.emit("game.broadcast", map[string]interface{}{
-		"event":             "WorldStateSnapshot",
-		"turn":              state.Turn,
-		"units":             publicUnits,
-		"regions":           state.Regions,
-		"paths":             state.Paths,
-		"turnStartedAt":     state.TurnStartedAt,
-		"turnDurationSec":   int(tp.session.TurnDuration),
-		"turnRemainingSec":  int(tp.session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
-		"ringBearerRegion":  tp.ringBearer.TrueRegion, // Light Side only; stripped for Dark Side
+		"event":            "WorldStateSnapshot",
+		"turn":             state.Turn,
+		"units":            publicUnits,
+		"regions":          state.Regions,
+		"paths":            state.Paths,
+		"turnStartedAt":    state.TurnStartedAt,
+		"turnDurationSec":  int(tp.session.TurnDuration),
+		"turnRemainingSec": int(tp.session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
+		"ringBearerRegion": tp.ringBearer.TrueRegion, // Light Side only; stripped for Dark Side
 	})
 }
-
 
 // emitGameOver emits GameOver with exactly-once semantics
 func (tp *TurnProcessor) emitGameOver(result map[string]interface{}, turn int) {

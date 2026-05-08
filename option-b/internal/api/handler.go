@@ -27,13 +27,13 @@ import (
 
 // Handler holds all dependencies for API handlers
 type Handler struct {
-	cache       *engine.CacheManager
-	router      *engine.EventRouter
-	pipeline1   *engine.Pipeline1
-	pipeline2   *engine.Pipeline2
-	kafkaCh     chan<- []byte
-	session     *game.GameSession
-	unitConfigs map[string]game.UnitConfig
+	cache          *engine.CacheManager
+	router         *engine.EventRouter
+	pipeline1      *engine.Pipeline1
+	pipeline2      *engine.Pipeline2
+	kafkaCh        chan<- []byte
+	session        *game.GameSession
+	unitConfigs    map[string]game.UnitConfig
 	initialRegions map[string]game.RegionState
 	initialPaths   map[string]game.PathState
 }
@@ -86,7 +86,6 @@ func (h *Handler) StartGame(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "only HVH mode supported", http.StatusBadRequest)
 		return
 	}
-	h.session.Phase = game.InProgress
 
 	state := h.cache.GetSnapshot()
 
@@ -187,13 +186,14 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		unitData := map[string]interface{}{
-			"id":       u.ID,
-			"strength": u.Strength,
-			"status":   u.Status,
-			"region":   u.Region,
-			"class":    cfg.Class,
+			"id":             u.ID,
+			"strength":       u.Strength,
+			"status":         u.Status,
+			"region":         u.Region,
+			"class":          cfg.Class,
 			"detectionRange": cfg.DetectionRange,
-			"isMaia":   cfg.IsMaia,
+			"isMaia":         cfg.IsMaia,
+			"side":           cfg.Side,
 		}
 		// Enforce information hiding: Ring Bearer region is always "" for Dark Side
 		if isDarkSide && cfg.Class == game.RingBearer {
@@ -208,10 +208,10 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 		"turnStartedAt":    state.TurnStartedAt,
 		"turnDurationSec":  int(state.Session.TurnDuration),
 		"turnRemainingSec": int(state.Session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
-		"units":          publicUnits,
-		"regions":        state.Regions,
-		"paths":          state.Paths,
-		"session":        state.Session,
+		"units":            publicUnits,
+		"regions":          state.Regions,
+		"paths":            state.Paths,
+		"session":          state.Session,
 	}
 
 	// Light Side gets ring bearer position via both top-level and lightView fields
