@@ -141,6 +141,7 @@ func (c *Consumer) Start(ctx context.Context) {
 					jsonBytes = e.Value
 					log.Printf("Consumer: using raw JSON fallback for message")
 				}
+				log.Printf("Consumer: ProcessMessage called with: %s", string(jsonBytes))
 				c.processor.ProcessMessage(jsonBytes)
 
 

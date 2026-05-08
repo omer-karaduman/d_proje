@@ -240,16 +240,22 @@ func main() {
 
 	
 	// Real Kafka Consumer for order processing
+	// CRITICAL FIX: Only run the OrderConsumer on the primary instance.
+	// Since ONLY the primary instance's TurnProcessor ticks turns, ONLY the primary instance
+	// has the authoritative CacheManager Turn state. If go-2 or go-3 consume the order,
+	// their validator will reject it due to WRONG_TURN.
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
-	consumer, err := kafka.NewConsumer(orderProcessor, avroHelper)
-	if err == nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			consumer.Start(consumerCtx)
-		}()
-	} else {
-		log.Printf("Warning: Failed to create order consumer: %v", err)
+	if isPrimary {
+		consumer, err := kafka.NewConsumer(orderProcessor, avroHelper)
+		if err == nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				consumer.Start(consumerCtx)
+			}()
+		} else {
+			log.Printf("Warning: Failed to create order consumer: %v", err)
+		}
 	}
 
 	// Real Kafka Consumer for SSE Events

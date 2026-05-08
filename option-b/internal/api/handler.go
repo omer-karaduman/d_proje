@@ -16,6 +16,7 @@ import (
 // Handler implements all HTTP endpoints from Section 34 of the spec.
 // Endpoints:
 //   POST /game/start
+//   POST /game/reset
 //   POST /order
 //   GET  /game/state
 //   GET  /orders/available
@@ -26,12 +27,15 @@ import (
 
 // Handler holds all dependencies for API handlers
 type Handler struct {
-	cache     *engine.CacheManager
-	router    *engine.EventRouter
-	pipeline1 *engine.Pipeline1
-	pipeline2 *engine.Pipeline2
-	kafkaCh   chan<- []byte
-	session   *game.GameSession
+	cache       *engine.CacheManager
+	router      *engine.EventRouter
+	pipeline1   *engine.Pipeline1
+	pipeline2   *engine.Pipeline2
+	kafkaCh     chan<- []byte
+	session     *game.GameSession
+	unitConfigs map[string]game.UnitConfig
+	initialRegions map[string]game.RegionState
+	initialPaths   map[string]game.PathState
 }
 
 // NewHandler creates a new API handler
@@ -56,6 +60,7 @@ func NewHandler(
 // RegisterRoutes registers all HTTP routes
 func (h *Handler) RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/game/start", h.StartGame).Methods("POST")
+	r.HandleFunc("/game/reset", h.ResetGame).Methods("POST")
 	r.HandleFunc("/order", h.SubmitOrder).Methods("POST")
 	r.HandleFunc("/game/state", h.GetGameState).Methods("GET")
 	r.HandleFunc("/orders/available", h.GetAvailableOrders).Methods("GET")
@@ -82,14 +87,87 @@ func (h *Handler) StartGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.session.Phase = game.InProgress
-	
+
 	// Reset the timer when the game starts
 	state := h.cache.GetSnapshot()
 	state.Session.Phase = game.InProgress
 	state.TurnStartedAt = time.Now().Unix()
 	h.cache.Update(state)
-	
+
 	respondJSON(w, http.StatusOK, map[string]string{"status": "started", "mode": req.Mode})
+}
+
+// ResetGame handles POST /game/reset
+// Resets world state to turn 1 without restarting Docker.
+func (h *Handler) ResetGame(w http.ResponseWriter, r *http.Request) {
+	state := h.cache.GetSnapshot()
+
+	// Reset session
+	h.session.Phase = game.WaitingForPlayers
+	h.session.CurrentTurn = 1
+
+	// Reset each unit to its starting state from UnitConfigs
+	resetUnits := make(map[string]game.UnitSnapshot, len(state.Units))
+	for id, cfg := range state.UnitConfigs {
+		region := cfg.StartRegion
+		if cfg.Class == game.RingBearer {
+			region = ""
+		}
+		resetUnits[id] = game.UnitSnapshot{
+			ID:           id,
+			Region:       region,
+			Strength:     cfg.Strength,
+			Status:       game.Active,
+			RespawnTurns: 0,
+			Route:        nil,
+			RouteIdx:     0,
+			Cooldown:     0,
+		}
+	}
+
+	// Reset regions: clear control and fortification
+	resetRegions := make(map[string]game.RegionState, len(state.Regions))
+	for id, reg := range state.Regions {
+		reg.ControlledBy = ""
+		reg.Fortified = false
+		reg.FortifyTurns = 0
+		reg.ThreatLevel = 0
+		resetRegions[id] = reg
+	}
+
+	// Reset paths: clear surveillance and blocks
+	resetPaths := make(map[string]game.PathState, len(state.Paths))
+	for id, p := range state.Paths {
+		p.Status = game.Open
+		p.SurveillanceLevel = 0
+		p.BlockedBy = ""
+		p.TempOpenTurns = 0
+		p.Corrupted = false
+		resetPaths[id] = p
+	}
+
+	newState := state
+	newState.Turn = 1
+	newState.TurnStartedAt = time.Now().Unix()
+	newState.Units = resetUnits
+	newState.Regions = resetRegions
+	newState.Paths = resetPaths
+	newState.Session = *h.session
+	newState.Session.CurrentTurn = 1
+	newState.LightView = game.LightSideView{RingBearerRegion: "the-shire"}
+	newState.DarkView = game.DarkSideView{RingBearerRegion: "", LastDetectedRegion: "", LastDetectedTurn: 0}
+	h.cache.Update(newState)
+
+	// Broadcast reset event to all SSE clients via existing game.broadcast topic
+	resetEvent, _ := json.Marshal(map[string]interface{}{
+		"type":    "GameReset",
+		"turn":    1,
+		"message": "Oyun sıfırlandı.",
+	})
+	h.router.RouteEvent("game.broadcast", resetEvent)
+
+	log.Println("[reset] Game state reset to turn 1")
+	respondJSON(w, http.StatusOK, map[string]string{"status": "reset", "turn": "1"})
 }
 
 // SubmitOrder handles POST /order — publishes to game.orders.raw; returns 202
