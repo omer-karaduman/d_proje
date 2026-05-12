@@ -56,18 +56,18 @@ func RunDetection(
 }
 
 // IsSauronEffectActive determines if Sauron's Eye is active.
-// Computed from unit configs — Sauron is identified by IsMaia=true, Side=SHADOW, StartRegion="mordor"
-// and being the only Maia on SHADOW side that starts in "mordor" with cooldown=0.
-// In practice, we check: config.IsMaia && config.Side == Shadow && unit is ACTIVE && unit.Region == "mordor"
-// This is config-driven: no "sauron" string literal in detection logic.
+// Computed from unit configs — Sauron is identified by IsMaia=true, Side=SHADOW,
+// and being the only Maia on SHADOW side with cooldown=0.
+// We check if this unit is ACTIVE and in its StartRegion (which is defined in config).
+// This is fully config-driven: no "sauron" or "mordor" string literals in detection logic.
 func IsSauronEffectActive(units []UnitWithConfig) bool {
 	for _, u := range units {
-		// Sauron's passive effect: Maia, Shadow side, active in mordor, cooldown-free (cooldown=0 in config)
+		// Sauron's passive effect: Maia, Shadow side, active in start region, cooldown-free
 		if u.Config.IsMaia &&
 			u.Config.Side == Shadow &&
 			u.Config.Cooldown == 0 &&
 			u.Snapshot.Status == Active &&
-			u.Snapshot.Region == "mordor" {
+			u.Snapshot.Region == u.Config.StartRegion {
 			return true
 		}
 	}

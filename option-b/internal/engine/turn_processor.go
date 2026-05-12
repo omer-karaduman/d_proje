@@ -273,6 +273,9 @@ func (tp *TurnProcessor) processTurn() {
 	// Emit WorldStateSnapshot
 	tp.emitWorldStateSnapshot(state)
 
+	// Reset exposed AFTER win conditions and snapshot — spec says "resets to false at end of every turn"
+	tp.ringBearer.Exposed = false
+
 	if isGameOver {
 		tp.gameOver = true // prevent further processing
 		tp.emitGameOver(result, turn)
@@ -882,9 +885,8 @@ func (tp *TurnProcessor) stepDetection(state game.WorldStateCache, turn int) gam
 		}
 	}
 
-	// Reset exposed at end of turn
-	defer func() { tp.ringBearer.Exposed = false }()
-
+	// NOTE: Exposed is reset at the END of processTurn (after win conditions are checked).
+	// Do NOT reset here — stepWinConditions must still see Exposed=true.
 	return state
 }
 
