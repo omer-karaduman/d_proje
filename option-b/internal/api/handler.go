@@ -350,9 +350,11 @@ func computeAvailableOrders(unit game.UnitSnapshot, cfg game.UnitConfig, state g
 		if cfg.CanFortify {
 			orders = append(orders, string(game.FortifyRegionOrder))
 		}
-		// RingBearer at mount-doom can destroy ring
+		// RingBearer at Ring Destruction Site can destroy ring.
+		// Identified by SpecialRole == RingDestructionSite — never by hardcoded region ID (B1).
 		if cfg.Class == game.RingBearer {
-			if state.LightView.RingBearerRegion == "mount-doom" {
+			rbRegion := state.LightView.RingBearerRegion
+			if reg, ok := state.Regions[rbRegion]; ok && reg.SpecialRole == game.RingDestructionSite {
 				orders = append(orders, string(game.DestroyRingOrder))
 			}
 		}

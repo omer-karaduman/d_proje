@@ -153,7 +153,9 @@ func ApplyDamage(snap UnitSnapshot, cfg UnitConfig, damage int) UnitSnapshot {
 				Region:       "",
 				Strength:     0,
 				Status:       Respawning,
-				RespawnTurns: cfg.RespawnTurns,
+				// BUG-07 fix: +1 so same-turn Step 11 decrement doesn't steal one tick.
+				// RespawnTurns=3 means "available 3 turns later", not 2.
+				RespawnTurns: cfg.RespawnTurns + 1,
 				Route:        nil,
 				RouteIdx:     0,
 				Cooldown:     snap.Cooldown,

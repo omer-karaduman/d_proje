@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ring-of-the-middle-earth/internal/game"
@@ -24,7 +25,7 @@ type RouteRiskRequest struct {
 // Pipeline1 manages the route risk analysis pipeline
 type Pipeline1 struct {
 	dispatchCh chan RouteRiskRequest
-	workerWg   sync.WaitGroup
+	running    atomic.Bool // true after Start() is called
 }
 
 // The 4 canonical routes (from spec Section 2.3)
@@ -64,11 +65,12 @@ func NewPipeline1() *Pipeline1 {
 
 // Start launches the pipeline with 4 workers
 func (p *Pipeline1) Start(wg *sync.WaitGroup, done <-chan struct{}) {
+	defer wg.Done()
+	p.running.Store(true)
 	numWorkers := 4
 	workerCh := make(chan RouteRiskRequest, 20)
-	aggregateCh := make(chan []game.RankedRoute) // unbuffered per spec
 
-	// Dispatcher goroutine
+	// Dispatcher goroutine: feeds work from dispatchCh to workerCh
 	go func() {
 		defer close(workerCh)
 		for {
@@ -90,58 +92,75 @@ func (p *Pipeline1) Start(wg *sync.WaitGroup, done <-chan struct{}) {
 		}
 	}()
 
-	// 4 Worker goroutines
+	// 4 Worker goroutines — each computes all route risks and sends to req.ResultCh
+	var workerWg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
-		p.workerWg.Add(1)
+		workerWg.Add(1)
 		go func(workerID int) {
-			defer p.workerWg.Done()
+			defer workerWg.Done()
 			for req := range workerCh {
 				select {
 				case <-req.CancelCtx.Done():
 					continue
 				default:
 				}
-				// Compute risk scores for all routes using a value copy of cache
+				// Compute using a value copy of cache — never shared pointers
 				cacheCopy := req.Cache
-				results := computeAllRouteRisks(cacheCopy)
+				routes := computeAllRouteRisks(cacheCopy)
+				ranked := rankRoutes(routes, cacheCopy)
+				// Send result to caller via ResultCh (spec: Aggregator → Deliverer)
 				select {
-				case aggregateCh <- results:
+				case req.ResultCh <- ranked:
 				case <-req.CancelCtx.Done():
+					log.Printf("Pipeline1: worker %d: request cancelled", workerID)
 				}
 			}
 		}(i)
 	}
 
-	// Aggregator goroutine
-	go func() {
-		p.workerWg.Wait()
-		close(aggregateCh)
-	}()
-
-	// Deliverer goroutine
-	go func() {
-		for routes := range aggregateCh {
-			_ = routes // Results are sent directly via req.ResultCh in workers
-		}
-	}()
+	// sync.WaitGroup at stage boundary (spec Section 32)
+	workerWg.Wait()
+	log.Println("Pipeline1: all workers done")
 }
 
-// Request sends a route risk analysis request and waits for result (with 2-second timeout)
+// Request sends a route risk analysis request through the worker pipeline and waits for result.
+// Uses 2-second timeout per spec Section 32. Routes through dispatchCh — workers handle computation.
+// Request sends a route risk analysis request and returns the result.
+// If the worker pipeline is running (Start() called), routes through dispatchCh.
+// If not running (e.g., unit tests), computes directly in a goroutine.
+// Uses 2-second timeout per spec Section 32.
 func (p *Pipeline1) Request(cache game.WorldStateCache) game.RankedRouteList {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	resultCh := make(chan game.RankedRouteList, 1)
 
-	// Compute directly (in practice, dispatch to workers)
-	go func() {
-		routes := computeAllRouteRisks(cache)
-		ranked := rankRoutes(routes, cache)
-		select {
-		case resultCh <- ranked:
-		case <-ctx.Done():
+	if p.running.Load() {
+		// Pipeline is running — route through dispatcher
+		req := RouteRiskRequest{
+			Cache:     cache,
+			ResultCh:  resultCh,
+			CancelCtx: ctx,
 		}
-	}()
+		select {
+		case p.dispatchCh <- req:
+			// Worker will compute and send to resultCh
+		case <-ctx.Done():
+			log.Println("Pipeline1: dispatchCh full, timeout before dispatch")
+			return game.RankedRouteList{Warnings: []string{"pipeline_full"}}
+		}
+	} else {
+		// Pipeline not started (unit tests) — compute directly in a new goroutine
+		go func() {
+			cacheCopy := cache
+			routes := computeAllRouteRisks(cacheCopy)
+			ranked := rankRoutes(routes, cacheCopy)
+			select {
+			case resultCh <- ranked:
+			case <-ctx.Done():
+			}
+		}()
+	}
 
 	select {
 	case result := <-resultCh:
@@ -151,6 +170,7 @@ func (p *Pipeline1) Request(cache game.WorldStateCache) game.RankedRouteList {
 		return game.RankedRouteList{Warnings: []string{"analysis_timeout"}}
 	}
 }
+
 
 // computeAllRouteRisks computes risk scores for all 4 canonical routes.
 // Uses a value copy of the cache — never touches shared state.

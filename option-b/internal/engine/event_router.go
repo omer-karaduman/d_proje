@@ -65,23 +65,47 @@ func (er *EventRouter) RouteEvent(topic string, payload []byte) {
 
 	case "game.ring.position":
 		// RingBearerMoved — Light Side ONLY, NEVER Dark Side
-		er.lightSideSSECh <- string(payload)
+		select {
+		case er.lightSideSSECh <- string(payload):
+		default:
+			log.Printf("EventRouter: lightSideSSECh full, dropping ring.position event")
+		}
 		// never darkSideSSECh
 
 	case "game.ring.detection":
 		// RingBearerDetected / RingBearerSpotted — Dark Side ONLY
-		er.darkSideSSECh <- string(payload)
+		select {
+		case er.darkSideSSECh <- string(payload):
+		default:
+			log.Printf("EventRouter: darkSideSSECh full, dropping ring.detection event")
+		}
 		// never lightSideSSECh
 
 	case "game.broadcast":
 		// WorldStateSnapshot — both sides, but Ring Bearer region STRIPPED for Dark Side
-		er.lightSideSSECh <- string(payload)
-		er.darkSideSSECh <- stripRingBearer(payload)
+		select {
+		case er.lightSideSSECh <- string(payload):
+		default:
+			log.Printf("EventRouter: lightSideSSECh full, dropping broadcast for light side")
+		}
+		select {
+		case er.darkSideSSECh <- stripRingBearer(payload):
+		default:
+			log.Printf("EventRouter: darkSideSSECh full, dropping broadcast for dark side")
+		}
 
 	case "game.events.unit", "game.events.region", "game.events.path":
 		// General events — both sides receive
-		er.lightSideSSECh <- string(payload)
-		er.darkSideSSECh <- string(payload)
+		select {
+		case er.lightSideSSECh <- string(payload):
+		default:
+			log.Printf("EventRouter: lightSideSSECh full, dropping %s event", topic)
+		}
+		select {
+		case er.darkSideSSECh <- string(payload):
+		default:
+			log.Printf("EventRouter: darkSideSSECh full, dropping %s event", topic)
+		}
 
 	case "game.orders.validated":
 		// Forward to engine for processing

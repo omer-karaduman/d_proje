@@ -600,7 +600,10 @@ function startTimer(turnStartedAt, duration) {
 
 function updateTimerUI(s) {
   $('timer-text').textContent = s;
-  const pct = (s / TURN_SECONDS) * 100;
+  // FIX: use state.turnDuration (not hardcoded TURN_SECONDS) so arc is correct
+  // when turnDurationSec differs from the default (e.g. 30s demo mode).
+  const totalSec = state.turnDuration || TURN_SECONDS;
+  const pct = Math.max(0, Math.min(100, (s / totalSec) * 100));
   $('timer-arc').setAttribute('stroke-dasharray', `${pct} 100`);
   $('timer-arc').style.stroke = s <= 10 ? '#ff4444' : '#c9a84c';
 }
@@ -622,8 +625,21 @@ async function fetchGameState() {
     if (d.lastDetectedRegion) state.lastDetectedRegion = d.lastDetectedRegion;
     $('turn-number').textContent = state.turn;
 
+    // FIX: Always start the timer, even if the server doesn't send turnStartedAt.
+    // On Dark Side, the server strips Ring Bearer data but ALSO may omit turnStartedAt
+    // on Turn 1 if the game just started and the first tick hasn't fired yet.
+    // Without this fallback, the Dark Side timer is silently never started.
+    const turnDur = d.turnDurationSec || TURN_SECONDS;
     if (d.turnStartedAt) {
-      startTimer(d.turnStartedAt, d.turnDurationSec);
+      startTimer(d.turnStartedAt, turnDur);
+    } else if (typeof d.turnRemainingSec === 'number') {
+      // Server sent remaining seconds — back-calculate epoch
+      const startedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, d.turnRemainingSec));
+      startTimer(startedAt, turnDur);
+    } else {
+      // FIX: Dark Side Turn 1 fallback — server hasn't emitted turnStartedAt yet.
+      // Start from "now" so the timer shows 60s counting down (will resync on next SSE).
+      startTimer(Math.floor(Date.now() / 1000), turnDur);
     }
 
     renderUnits();
@@ -898,7 +914,11 @@ function drawMap() {
   // ── 3. Birimler ────────────────────────────────────────────────────────
   const byRegion = {};
   Object.entries(state.units).forEach(([uid, u]) => {
-    if (!u.region) return;
+    // CRITICAL GUARD: skip units with empty region (e.g. Ring Bearer on Dark Side,
+    // or any RESPAWNING unit). Without this, byRegion[""] builds up and
+    // REGION_POS[""] → undefined → pos.x throws TypeError, crashing the entire
+    // render loop and preventing anything after it (including timer init) from running.
+    if (!u.region || u.region === '') return;
     if (!byRegion[u.region]) byRegion[u.region] = [];
     byRegion[u.region].push({ uid, u });
   });

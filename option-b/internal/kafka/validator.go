@@ -171,8 +171,14 @@ func (v *OrderValidator) extractPathIDs(o game.Order) []string {
 	return nil
 }
 
+// isAdjacent returns true if two regions are connected by an open (non-blocked) path.
+// BUG-11 fix: BLOCKED paths are excluded. A unit cannot attack through a blocked path —
+// blocking is a defensive action that prevents both traversal and adjacent attacks.
 func (v *OrderValidator) isAdjacent(state game.WorldStateCache, from, to string) bool {
 	for _, p := range state.Paths {
+		if p.Status == game.Blocked {
+			continue // BLOCKED path does not count as adjacent
+		}
 		if (p.From == from && p.To == to) || (p.To == from && p.From == to) {
 			return true
 		}

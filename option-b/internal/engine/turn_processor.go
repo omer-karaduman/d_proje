@@ -50,13 +50,23 @@ func NewTurnProcessor(
 	unitConfigs map[string]game.UnitConfig,
 	p2 *Pipeline2,
 ) *TurnProcessor {
+	// BUG-01 fix: seed TrueRegion from config so detection/win conditions work from Turn 1.
+	// Without this, if the Ring Bearer never moves, tp.ringBearer.TrueRegion stays ""
+	// and detection/win-condition checks against state.Regions[""] always fail.
+	rbStartRegion := ""
+	for _, cfg := range unitConfigs {
+		if cfg.Class == game.RingBearer {
+			rbStartRegion = cfg.StartRegion
+			break
+		}
+	}
 	return &TurnProcessor{
 		cache:          cache,
 		engineCh:       engineCh,
 		producerCh:     producerCh,
 		graph:          graph,
 		session:        session,
-		ringBearer:     &game.RingBearerState{TrueRegion: ""},
+		ringBearer:     &game.RingBearerState{TrueRegion: rbStartRegion},
 		unitConfigs:    unitConfigs,
 		ordersThisTurn: make(map[string]game.Order),
 		pipeline2:      p2,
@@ -493,7 +503,9 @@ func (tp *TurnProcessor) stepMaiaAbilities(state game.WorldStateCache, orders ma
 			path.Status = game.TemporarilyOpen
 			path.TempOpenTurns = 2
 			state.Paths[targetPathID] = path
-			unit.Cooldown = cfg.Cooldown
+			// BUG-07 fix: set Cooldown+1 so the same-turn Step 11 decrement
+			// doesn't consume one tick. "cooldown=3" means available 3 turns later.
+			unit.Cooldown = cfg.Cooldown + 1
 			state.Units[unitID] = unit
 			tp.emit("game.events.path", map[string]interface{}{
 				"event":         "PathStatusChanged",
@@ -511,10 +523,17 @@ func (tp *TurnProcessor) stepMaiaAbilities(state game.WorldStateCache, orders ma
 			if !tp.graph.IsEndpointRegion(targetPathID, unit.Region) {
 				continue
 			}
+			// BUG-05 fix: cannot corrupt a TEMPORARILY_OPEN path (Gandalf already opened it).
+			// Spec: CorruptPath targets OPEN, THREATENED, or BLOCKED paths only.
+			if path.Status == game.TemporarilyOpen {
+				log.Printf("TurnProcessor: CORRUPT_PATH rejected — path %s is TEMPORARILY_OPEN (Gandalf opened it)", targetPathID)
+				continue
+			}
 			path.SurveillanceLevel = 3
 			path.Corrupted = true
 			state.Paths[targetPathID] = path
-			unit.Cooldown = cfg.Cooldown
+			// BUG-07 fix: +1 so same-turn Step 11 decrement doesn't steal one tick
+			unit.Cooldown = cfg.Cooldown + 1
 			state.Units[unitID] = unit
 			tp.emit("game.events.path", map[string]interface{}{
 				"event":             "PathCorrupted",
@@ -661,7 +680,14 @@ func (tp *TurnProcessor) stepCombat(state game.WorldStateCache, orders map[strin
 			effectiveRegion = tp.ringBearer.TrueRegion
 		}
 
-		if effectiveRegion != target && !tp.graph.AreAdjacent(effectiveRegion, target) {
+		// BUG-03 fix: reject attacks where attacker has already moved INTO the target
+		// region during Step 7 auto-advance. Without this, a unit can route to a region
+		// and then "attack" it in the same turn from the inside.
+		if effectiveRegion == target {
+			log.Printf("TurnProcessor: ATTACK rejected — %s already inside target %s after auto-advance", unitID, target)
+			continue
+		}
+		if !tp.graph.AreAdjacent(effectiveRegion, target) {
 			log.Printf("TurnProcessor: ATTACK rejected — %s (%s) not adjacent to %s", unitID, effectiveRegion, target)
 			continue
 		}
@@ -751,20 +777,39 @@ func (tp *TurnProcessor) stepCombat(state game.WorldStateCache, orders map[strin
 		}
 		state.Regions[targetRegion] = region
 	}
+
+	// BUG-02 fix: after all battles resolve, run an inline path-revert sweep.
+	// A blocker killed in Step 8 should immediately unblock its path, not wait
+	// until next turn's Step 3. Step 3 only runs at the TOP of each turn.
+	for pathID, path := range state.Paths {
+		if path.Status == game.Blocked && path.BlockedBy != "" {
+			blocker, ok := state.Units[path.BlockedBy]
+			if !ok || blocker.Status != game.Active ||
+				!tp.graph.IsEndpointRegion(pathID, blocker.Region) {
+				path.Status = game.Open
+				path.BlockedBy = ""
+				state.Paths[pathID] = path
+				log.Printf("TurnProcessor: path %s unblocked after combat (blocker destroyed)", pathID)
+			}
+		}
+	}
+
 	return state
 }
 
-// disableSarumanIfIsengardFell disables the Shadow Maia with MaiaAbilityPaths when Isengard falls.
-// Config-driven: identified by IsMaia=true, Shadow side, non-empty MaiaAbilityPaths.
+// disableSarumanIfIsengardFell disables the Shadow Maia with MaiaAbilityPaths when any
+// SHADOW_STRONGHOLD falls to Free Peoples. Identified purely by config — no unit ID literals.
+// BUG-04 fix: region check removed. Saruman is disabled regardless of his current location.
 func (tp *TurnProcessor) disableSarumanIfIsengardFell(state game.WorldStateCache, fallenRegion string) {
 	for unitID, u := range state.Units {
 		cfg, ok := tp.unitConfigs[unitID]
 		if !ok {
 			continue
 		}
-		// Saruman-equivalent: Shadow Maia at the fallen SHADOW_STRONGHOLD with ability paths
+		// Shadow Maia with ability paths = Saruman-equivalent.
+		// Disable regardless of current location — the stronghold fell, not just this region.
 		if cfg.IsMaia && cfg.Side == game.Shadow && len(cfg.MaiaAbilityPaths) > 0 &&
-			u.Region == fallenRegion {
+			u.Status == game.Active {
 			u.Status = game.Destroyed
 			state.Units[unitID] = u
 			tp.emit("game.events.unit", map[string]interface{}{
@@ -817,7 +862,9 @@ func (tp *TurnProcessor) stepFortificationTimers(state game.WorldStateCache) gam
 	return state
 }
 
-// stepRespawnAndCooldown decrements respawn and cooldown counters
+// stepRespawnAndCooldown decrements respawn and cooldown counters (Step 11).
+// NOTE on timers: cooldown/respawnTurns are set to value+1 when initialized (in stepMaiaAbilities
+// and ApplyDamage) so that the same-turn decrement here still leaves the full intended count.
 func (tp *TurnProcessor) stepRespawnAndCooldown(state game.WorldStateCache) game.WorldStateCache {
 	for unitID, unit := range state.Units {
 		cfg := tp.unitConfigs[unitID]
@@ -832,7 +879,9 @@ func (tp *TurnProcessor) stepRespawnAndCooldown(state game.WorldStateCache) game
 			}
 			changed = true
 		}
-		if unit.Cooldown > 0 {
+		// BUG-06 fix: only decrement cooldown for active units.
+		// Destroyed/Respawning units keeping a cooldown counter is a phantom state.
+		if unit.Status == game.Active && unit.Cooldown > 0 {
 			unit.Cooldown--
 			changed = true
 		}
@@ -1007,11 +1056,14 @@ func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 	})
 }
 
-// emitGameOver emits GameOver with exactly-once semantics
+// emitGameOver emits GameOver with exactly-once semantics.
+// Uses a BLOCKING send — GameOver must NEVER be silently dropped (K6 requirement).
 func (tp *TurnProcessor) emitGameOver(result map[string]interface{}, turn int) {
 	result["event"] = "GameOver"
-	tp.emit("game.broadcast", result)
-	log.Printf("TurnProcessor: GameOver emitted — %v", result)
+	// Blocking send: block until the producer goroutine picks this up.
+	// This guarantees delivery even under backpressure — never use select/default here.
+	tp.producerCh <- GameEvent{Topic: "game.broadcast", Payload: result}
+	log.Printf("TurnProcessor: GameOver sent (blocking) — %v", result)
 }
 
 // extractPathIDs extracts path IDs from order payload

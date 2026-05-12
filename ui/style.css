@@ -652,17 +652,44 @@ body {
 }
 .order-select:focus, .order-input:focus { border-color: var(--gold); }
 .order-label { font-size: 0.78rem; color: var(--text-muted); display: block; margin-top: 0.4rem; }
-.available-orders { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
-.order-chip {
-  padding: 0.3rem 0.7rem; font-size: 0.75rem;
-  background: rgba(201,168,76,0.1); border: 1px solid rgba(201,168,76,0.3);
-  border-radius: 20px; cursor: pointer; color: var(--gold-light);
-  transition: all var(--transition);
-}
-.order-chip:hover { background: rgba(201,168,76,0.2); }
-.order-chip.active { background: rgba(201,168,76,0.3); border-color: var(--gold); }
+
+/* ── Path Info Bar text (referenced by JS as $('path-info-text') via class) ─── */
+.path-info-text { /* span inside .path-info-bar — no extra styles needed, inherits bar */ }
 
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   .game-main { grid-template-columns: 160px 1fr 200px; }
+}
+
+/* Tablet / phone: stack panels vertically and allow map to scroll */
+@media (max-width: 768px) {
+  body { overflow: auto; }
+  #game-screen { height: auto; overflow: auto; }
+  .game-main {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    height: auto;
+  }
+  .units-panel {
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid var(--dark-border);
+  }
+  .map-container {
+    /* Enough height for the canvas to be usable on a phone */
+    min-height: 340px;
+  }
+  .right-panel {
+    max-height: 340px;
+    border-left: none;
+    border-top: 1px solid var(--dark-border);
+  }
+  .game-header {
+    /* Allow header to wrap on very small screens */
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .header-center { order: -1; width: 100%; }
+  .order-panel { width: min(420px, 95%); }
 }
