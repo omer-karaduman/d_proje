@@ -633,6 +633,12 @@ function syncTimerFromClock() {
 }
 
 function _tickTimer() {
+  console.log('[timer tick]', {
+    turnStartedAt: state.turnStartedAt,
+    turnDuration: state.turnDuration,
+    now: Math.floor(Date.now() / 1000)
+  });
+
   if (!state.turnStartedAt || state.turnStartedAt <= 0 || !state.turnDuration) {
     $('timer-text').textContent = '—';
     $('timer-arc').setAttribute('stroke-dasharray', '100 100');
@@ -640,7 +646,7 @@ function _tickTimer() {
     return;
   }
   const now = Math.floor(Date.now() / 1000);
-  const elapsed = Math.max(0, now - state.turnStartedAt); // const, Math.max ile güvenli
+  const elapsed = Math.max(0, now - state.turnStartedAt);
   const remaining = Math.max(0, state.turnDuration - elapsed);
   updateTimerUI(remaining);
   if (remaining <= 0) {
@@ -683,14 +689,24 @@ async function fetchGameState() {
     if (d.lastDetectedRegion) state.lastDetectedRegion = d.lastDetectedRegion;
     $('turn-number').textContent = state.turn;
 
-    // ÖNCELiK: turnRemainingSec her zaman önce — saat kaymasından etkilenmez.
     const turnDur = d.turnDurationSec || TURN_SECONDS;
 
     if (typeof d.turnRemainingSec === 'number' && d.turnRemainingSec >= 0) {
       const startedAt = Math.floor(Date.now() / 1000) - (turnDur - d.turnRemainingSec);
       startTimer(startedAt, turnDur);
     } else if (d.turnStartedAt && d.turnStartedAt > 0) {
-      startTimer(d.turnStartedAt, turnDur);
+      // Docker saati kayması düzeltmesi: turnStartedAt yerine şimdiden başlat
+      // ama kalan süreyi tahmin et (en fazla turnDur kadar)
+      const serverElapsed = Math.floor(Date.now() / 1000) - d.turnStartedAt;
+      const remaining = Math.max(0, turnDur - serverElapsed);
+      if (remaining === 0 || serverElapsed > turnDur + 30) {
+        // Saat çok kaymış, SSE'yi bekle
+        $('timer-text').textContent = '—';
+        $('timer-arc').setAttribute('stroke-dasharray', '100 100');
+        $('timer-arc').style.stroke = '#555';
+      } else {
+        startTimer(d.turnStartedAt, turnDur);
+      }
     } else {
       $('timer-text').textContent = '—';
       $('timer-arc').setAttribute('stroke-dasharray', '100 100');
@@ -802,40 +818,33 @@ function getMapTransform() {
 function drawMap() {
   if (!ctx) return;
   const dpr = window.devicePixelRatio || 1;
-  // Derive logical dims from the physical buffer (always current, DPR-independent).
   const W = canvas.width / dpr;
   const H = canvas.height / dpr;
   const now = Date.now();
 
-  // 1. Clear entire physical buffer
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // 2. Full-canvas vignette background (DPR scale, no map offset)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const _bgG = ctx.createRadialGradient(W * .5, H * .44, 0, W * .5, H * .44, Math.max(W, H) * .72);
   _bgG.addColorStop(0, '#0f0f20'); _bgG.addColorStop(1, '#030308');
   ctx.fillStyle = _bgG;
   ctx.fillRect(0, 0, W, H);
 
-  // 3. Compute bounding box of all REGION_POS and centering offset
   const _pos = Object.values(REGION_POS);
   const minX = Math.min(..._pos.map(p => p.x));
   const maxX = Math.max(..._pos.map(p => p.x));
   const minY = Math.min(..._pos.map(p => p.y));
   const maxY = Math.max(..._pos.map(p => p.y));
-  const PAD = 56; // breathing room for labels on all sides
+  const PAD = 56;
   const scale = Math.min((W - PAD * 2) / (maxX - minX), (H - PAD * 2) / (maxY - minY));
+  if (!scale || scale <= 0) return;
   const offsetX = (W - (maxX - minX) * scale) / 2 - minX * scale;
   const offsetY = (H - (maxY - minY) * scale) / 2 - minY * scale;
 
-  // 4. Single setTransform that combines DPR + centering translation.
-  //    All subsequent draws just use  pos.x * scale, pos.y * scale.
   ctx.setTransform(dpr, 0, 0, dpr, offsetX * dpr, offsetY * dpr);
   const scaleX = scale, scaleY = scale, s = scale;
 
-  // ── 0b. Helpers ──────────────────────────────────────────────────────────────
-  // Rounded-rect path (browser-safe)
   const _rr = (x, y, w, h, r) => {
     const ri = Math.min(r ?? 3, w / 2, h / 2);
     ctx.beginPath();
@@ -847,7 +856,6 @@ function drawMap() {
     ctx.closePath();
   };
 
-  // Outstroked text — crisp on any background
   const _txt = (text, x, y, fillCol, size, bold = false, strokeWidth = 2.5) => {
     ctx.font = `${bold ? 'bold ' : ''}${size}px Inter, sans-serif`;
     ctx.textAlign = 'center';
@@ -859,15 +867,14 @@ function drawMap() {
     ctx.fillText(text, x, y);
   };
 
-  // Draw a single premium unit token
   const drawUnitToken = (uid, u, ux, uy, isSelected, hasPending) => {
     const disp = UNIT_DISPLAY[uid] || { icon: '🔹', name: uid };
     const shadowIds = ['witch-king', 'nazgul-2', 'nazgul-3', 'uruk-hai-legion', 'saruman', 'sauron'];
     const side = (u.side || '').toUpperCase();
     const isShadow = side === 'SHADOW' || (side === '' && shadowIds.includes(uid));
-    const R = Math.round(14 * s); // token radius — increased from 11 for visibility
+    const R = Math.round(14 * s);
+    if (R <= 0) return;
 
-    // Selected: pulsing gold outer ring
     if (isSelected) {
       const gp = 0.5 + 0.5 * Math.sin(now / 350);
       ctx.beginPath();
@@ -879,13 +886,11 @@ function drawMap() {
       ctx.shadowBlur = 0;
     }
 
-    // Drop shadow under token
     ctx.beginPath();
     ctx.arc(ux, uy + 2, R, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fill();
 
-    // Token background — radial gradient for a polished 3-D pill look
     const tg = ctx.createRadialGradient(ux - R * .3, uy - R * .3, 0, ux, uy, R);
     if (isShadow) {
       tg.addColorStop(0, '#3a0a0a');
@@ -899,7 +904,6 @@ function drawMap() {
     ctx.fillStyle = tg;
     ctx.fill();
 
-    // Crisp 2px side-coloured border
     const borderCol = isShadow
       ? (hasPending ? '#ffaa44' : '#cc2200')
       : (hasPending ? '#ffdd55' : '#3a8eff');
@@ -909,7 +913,6 @@ function drawMap() {
     ctx.lineWidth = hasPending ? 2.5 : 2;
     ctx.stroke();
 
-    // Emoji — pixel-perfect centred
     const iconPx = Math.round(12 * s);
     ctx.font = `${iconPx}px Inter, sans-serif`;
     ctx.textAlign = 'center';
@@ -917,13 +920,11 @@ function drawMap() {
     ctx.fillText(disp.icon, ux, uy);
     ctx.textBaseline = 'alphabetic';
 
-    // Unit short-name label (first word) with outstroked text
     const label = (disp.name || uid).split(/[\s,]/)[0];
     const lPx = Math.round(6 * s);
     const ly = uy + R + 9;
     _txt(label, ux, ly, isShadow ? '#ffcccc' : '#cce4ff', lPx);
 
-    // Pending gold dot (top-right)
     if (hasPending) {
       ctx.beginPath();
       ctx.arc(ux + R - 2, uy - R + 2, 3.5, 0, Math.PI * 2);
@@ -932,7 +933,6 @@ function drawMap() {
     }
   };
 
-  // ── 0c. Sauron-in-Mordor detection (needed for section 6) ───────────────────
   const sauronInMordor = (() => {
     const s = Object.values(state.units).find(u => {
       const id = Object.entries(state.units).find(([, v]) => v === u)?.[0] || '';
@@ -943,7 +943,6 @@ function drawMap() {
     return !!s;
   })();
 
-  // ── 0d. Nazgul detection aura ───────────────────────────────────────────────
   const nazgulUnits = Object.entries(state.units).filter(([uid, u]) => {
     const cfg = (state.unitConfigs || {})[uid] || {};
     return (cfg.detectionRange || 0) > 0 && (u.status || 'ACTIVE').toUpperCase() === 'ACTIVE' && u.region;
@@ -969,7 +968,6 @@ function drawMap() {
     });
   }
 
-  // ── 1. Paths ─────────────────────────────────────────────────────────────────
   PATHS.forEach(p => {
     const a = REGION_POS[p.from], b = REGION_POS[p.to];
     if (!a || !b) return;
@@ -992,19 +990,16 @@ function drawMap() {
     else if ((pd.surveillanceLevel || 0) === 1) { col = '#703050'; lw = 1.5; dash = [3, 4]; glowCol = 'none'; glowR = 0; }
     else { col = '#1e1e30'; lw = 1.5; dash = []; glowCol = 'none'; glowR = 0; }
 
-    // Layer 1: dark road base
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
     ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = lw + 3; ctx.setLineDash([]); ctx.shadowBlur = 0;
     ctx.stroke();
 
-    // Layer 2: coloured status line
     ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
     ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.setLineDash(dash);
     ctx.shadowColor = glowCol; ctx.shadowBlur = glowR;
     ctx.stroke();
     ctx.setLineDash([]); ctx.shadowBlur = 0;
 
-    // Midpoint icon
     const iPx = Math.round(12 * s);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (pd.status === 'BLOCKED') { ctx.font = `${iPx}px Inter,sans-serif`; ctx.fillText('🚫', mx, my); }
@@ -1021,7 +1016,6 @@ function drawMap() {
     ctx.textBaseline = 'alphabetic';
   });
 
-  // ── 2. Region nodes — radial-gradient for depth/polish ──────────────────────
   for (const [id, pos] of Object.entries(REGION_POS)) {
     const meta = REGION_META[id] || {};
     const rd = state.regions[id] || {};
@@ -1030,11 +1024,9 @@ function drawMap() {
     const R = hovered ? 19 : 16;
     const usc = Math.min(scaleX, scaleY);
 
-    // Drop shadow
     ctx.beginPath(); ctx.arc(sx, sy + 2, R + 1, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
 
-    // Landmark glow
     ctx.shadowBlur = 0;
     if (id === 'mount-doom') { ctx.shadowColor = '#ff4400'; ctx.shadowBlur = hovered ? 30 : 18; }
     else if (id === 'the-shire') { ctx.shadowColor = '#4a90d9'; ctx.shadowBlur = hovered ? 16 : 8; }
@@ -1042,17 +1034,15 @@ function drawMap() {
     else if (rd.fortified) { ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 10; }
     else if (hovered) { ctx.shadowColor = 'rgba(201,168,76,0.7)'; ctx.shadowBlur = 14; }
 
-    // Terrain fill — RADIAL GRADIENT for depth (looks like a raised button/node)
     const baseCol = TERRAIN_COLOR[meta.terrain] || '#1a1a2a';
     const rg = ctx.createRadialGradient(sx - R * .35, sy - R * .35, 0, sx, sy, R);
-    rg.addColorStop(0, lightenColor(baseCol, 0.60));  // brighter highlight
+    rg.addColorStop(0, lightenColor(baseCol, 0.60));
     rg.addColorStop(0.55, baseCol);
     rg.addColorStop(1, darkenColor(baseCol, 0.45));
     ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2);
     ctx.fillStyle = rg; ctx.fill();
     ctx.shadowBlur = 0;
 
-    // Control ring
     let ringCol;
     if (rd.controlledBy === 'SHADOW') ringCol = 'rgba(200,20,20,0.9)';
     else if (rd.controlledBy === 'FREE_PEOPLES') ringCol = 'rgba(45,140,74,0.9)';
@@ -1061,7 +1051,6 @@ function drawMap() {
     ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2);
     ctx.strokeStyle = ringCol; ctx.lineWidth = hovered ? 3 : 2; ctx.stroke();
 
-    // Fortification dashed outer ring
     if (rd.fortified) {
       ctx.beginPath(); ctx.arc(sx, sy, R + 5, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(201,168,76,0.6)'; ctx.lineWidth = 2;
@@ -1072,12 +1061,10 @@ function drawMap() {
       ctx.textBaseline = 'alphabetic';
     }
 
-    // Region name — outstroked for legibility
     const labelY = sy + R + 14;
     const fPx = Math.round(hovered ? 9.5 * usc : 8.5 * usc);
     _txt(meta.name || id, sx, labelY, hovered ? '#e8e0cc' : '#b8b0cc', fPx, hovered);
 
-    // High-threat badge (≥4 only)
     const threat = rd.threatLevel ?? meta.threat ?? 0;
     if (threat >= 4) {
       const tPx = Math.round(8 * usc);
@@ -1091,7 +1078,6 @@ function drawMap() {
     }
   }
 
-  // ── 3. Unit tokens — anti-overlap trigonometric spread ──────────────────────
   const byRegion = {};
   Object.entries(state.units).forEach(([uid, u]) => {
     if (!u.region) return;
@@ -1103,22 +1089,18 @@ function drawMap() {
     const pos = REGION_POS[regionId]; if (!pos) return;
     const cx = pos.x * scaleX, cy = pos.y * scaleY;
     const total = units.length;
-    // Cluster radius — must be > 2×tokenRadius (R≈14px) to prevent overlap.
-    // Using a fixed pixel value so it scales correctly with the canvas.
     const tokenR = Math.round(14 * s);
     const CR = total === 1 ? 0 : total === 2 ? tokenR * 2 + 6 : total <= 4 ? tokenR * 2 + 8 : tokenR * 2 + 14;
 
     units.forEach(({ uid, u }, i) => {
       const isSelected = state.selectedUnit === uid;
       const hasPending = !!state.pendingOrders[uid];
-      // Evenly spaced arc; single unit stays centred
       const angle = total === 1 ? -Math.PI / 2 : (i / total) * Math.PI * 2 - Math.PI / 2;
       const ux = cx + Math.cos(angle) * CR;
       const uy = cy + Math.sin(angle) * CR;
       drawUnitToken(uid, u, ux, uy, isSelected, hasPending);
     });
 
-    // Count badge for 3+ unit clusters
     if (total >= 3) {
       const bx = cx + CR + 8, by = cy - CR - 4;
       ctx.beginPath(); ctx.arc(bx, by, 8, 0, Math.PI * 2);
@@ -1130,7 +1112,6 @@ function drawMap() {
     }
   });
 
-  // ── 4. Ring Bearer — double pulsing ring (Light Side) ───────────────────────
   if (state.side !== 'SHADOW' && state.ringBearerRegion) {
     const pos = REGION_POS[state.ringBearerRegion];
     if (pos) {
@@ -1147,7 +1128,6 @@ function drawMap() {
     }
   }
 
-  // ── 5. Last Detected Region — dashed hunt ring (Shadow) ─────────────────────
   if (state.side === 'SHADOW' && state.lastDetectedRegion) {
     const pos = REGION_POS[state.lastDetectedRegion];
     if (pos) {
@@ -1163,7 +1143,6 @@ function drawMap() {
     }
   }
 
-  // ── 6. Sauron Passive Aura ───────────────────────────────────────────────────
   if (sauronInMordor) {
     const pos = REGION_POS['mordor'];
     if (pos) {
@@ -1175,7 +1154,6 @@ function drawMap() {
     }
   }
 
-  // Reset transform — remove centering offset, keep DPR scale
   const _dpr = window.devicePixelRatio || 1;
   ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
 }
