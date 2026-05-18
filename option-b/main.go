@@ -112,20 +112,18 @@ func main() {
 	wg.Add(1)
 	go eventRouter.Run(&wg, done)
 
-	// ── ISSUE 1 FIX: Remove IS_PRIMARY static flag ──────────────────────────────
-	// Previously, only go-1 ran TurnProcessor because IS_PRIMARY="true" was
-	// hardcoded in docker-compose. This violates the spec (all instances must be
-	// interchangeable). The correct approach: all 3 instances start TurnProcessor,
-	// but ONLY the instance that Kafka assigns partition-0 of game.orders.validated
-	// acts as the active processor. The others stay idle (no partition = no orders).
+	// ── Mimari: Active/Passive Failover ────────────────────────────────────────
+	// game.orders.raw → 1 partition, tüm instance'lar aynı ring-engine-group'ta.
+	// Kafka protokolü gereği 1 partition'ı tek bir consumer'a assign eder.
+	// → Sadece 1 instance (Lider) order consume eder, state sadece orada değişir.
+	// → Lider çökerse Kafka saniyeler içinde rebalance yapar, başka instance devralır.
+	// → go-2/go-3 idle kalır ama SSE/HTTP isteklerine cevap vermeye devam eder.
 	//
-	// Partition-0 acts as the "leader token": Kafka's consumer group protocol
-	// guarantees exactly one consumer owns it at any time. On failover, Kafka
-	// rebalances and another instance gets partition-0 — no manual failover needed.
-	//
-	// All 3 instances run TurnProcessor goroutines + pipelines. The "non-leader"
-	// instances simply never receive orders, so their tickers fire but produce
-	// no-ops (session.Phase != InProgress or ordersThisTurn is empty).
+	// EventConsumer ise sse-group-{INSTANCE_ID} kullanır (event_consumer.go:36).
+	// → Her instance benzersiz group'ta olduğu için tüm instance'lar
+	//   game.broadcast ve diğer event topic'lerini bağımsız olarak consume eder.
+	// → Nginx hangi instance'a yönlendirirse yönlendirsin, browser SSE mesajını alır.
+	// → Timer asla 0'da kalmaz.
 
 	// Instantiate analysis pipelines (required by TurnProcessor and API handler)
 	p1 := engine.NewPipeline1()
@@ -266,7 +264,10 @@ func main() {
 		log.Printf("Warning: Failed to create order consumer: %v", err)
 	}
 
-	// Real Kafka Consumer for SSE Events
+	// Real Kafka Consumer for SSE Events.
+	// EventConsumer uses "sse-group-{INSTANCE_ID}" (see event_consumer.go).
+	// Each instance has a UNIQUE group → all 3 receive every broadcast message.
+	// Browser timer never stalls regardless of which instance Nginx routes to.
 	eventConsumer, err := kafka.NewEventConsumer(eventRouter, avroHelper)
 	if err == nil {
 		wg.Add(1)

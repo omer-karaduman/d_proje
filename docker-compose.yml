@@ -146,8 +146,8 @@ services:
         echo 'Waiting for Kafka...' &&
         sleep 10 &&
         echo 'Creating topics...' &&
-        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.raw --partitions 3 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
-        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.validated --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.raw --partitions 1 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
+        kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.orders.validated --partitions 1 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=3600000 &&
         kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.unit --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
         kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.region --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
         kafka-topics --create --if-not-exists --bootstrap-server kafka-1:9092 --topic game.events.path --partitions 6 --replication-factor 3 --config cleanup.policy=delete --config retention.ms=604800000 &&
