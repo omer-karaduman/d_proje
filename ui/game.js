@@ -273,11 +273,13 @@ function handleServerEvent(msg) {
 
       {
         const turnDur = msg.turnDurationSec || TURN_SECONDS;
-        if (msg.turnStartedAt) {
-          state.turnStartedAt = msg.turnStartedAt;
+        // CLOCK DRIFT FIX: turnRemainingSec öncelikli — sunucu saatiyle
+        // tarayıcı saati arasındaki farktan etkilenmez.
+        if (typeof msg.turnRemainingSec === 'number') {
+          state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(0, msg.turnRemainingSec));
           state.turnDuration = turnDur;
-        } else if (typeof msg.turnRemainingSec === 'number') {
-          state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, msg.turnRemainingSec));
+        } else if (msg.turnStartedAt) {
+          state.turnStartedAt = msg.turnStartedAt;
           state.turnDuration = turnDur;
         } else {
           state.turnStartedAt = Math.floor(Date.now() / 1000);
@@ -510,6 +512,12 @@ document.addEventListener('DOMContentLoaded', () => {
   resizeCanvas();
   runLoadingScreen();
 
+  // Timer başlangıç değeri — oyun başlayana kadar "—" göster
+  const timerTxt = $('timer-text');
+  if (timerTxt) timerTxt.textContent = '—';
+  const timerArc = $('timer-arc');
+  if (timerArc) { timerArc.setAttribute('stroke-dasharray', '100 100'); timerArc.style.stroke = '#555'; }
+
   $('player-id-input').addEventListener('input', e => {
     $('join-btn').disabled = e.target.value.trim().length < 2;
   });
@@ -635,10 +643,12 @@ function _tickTimer() {
   const now = Math.floor(Date.now() / 1000);
   const elapsed = now - state.turnStartedAt;
   // Güvenlik: elapsed negatif veya aşırı büyükse (saat kayması) düzelt
-  if (elapsed < 0 || elapsed > state.turnDuration + 5) {
+  // Saat kayması toleransı genişletildi: ±30s izin ver, geri kalanını sıfırla
+  if (elapsed < -30) {
     $('timer-text').textContent = '—';
     return;
   }
+  if (elapsed < 0) elapsed = 0; // küçük negatif drift — sıfıra say
   const remaining = Math.max(0, state.turnDuration - elapsed);
   updateTimerUI(remaining);
   if (remaining <= 0) {
@@ -681,25 +691,25 @@ async function fetchGameState() {
     if (d.lastDetectedRegion) state.lastDetectedRegion = d.lastDetectedRegion;
     $('turn-number').textContent = state.turn;
 
-    // FIX: Always start the timer, even if the server doesn't send turnStartedAt.
-    // On Dark Side, the server strips Ring Bearer data but ALSO may omit turnStartedAt
-    // on Turn 1 if the game just started and the first tick hasn't fired yet.
-    // Without this fallback, the Dark Side timer is silently never started.
+    // CLOCK DRIFT FIX: turnRemainingSec her zaman öncelikli.
+    // Sunucu saatiyle tarayıcı saati arasındaki fark timer'ı bozmasın.
     const turnDur = d.turnDurationSec || TURN_SECONDS;
 
-    if (d.turnStartedAt && d.turnStartedAt > 0) {
-      // Sunucudan geçerli başlangıç zamanı var — timer'ı başlat
-      startTimer(d.turnStartedAt, turnDur);
-    } else if (typeof d.turnRemainingSec === 'number' && d.turnRemainingSec > 0) {
-      // Kalan süreden başlangıç zamanını hesapla
-      const startedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, d.turnRemainingSec));
+    if (typeof d.turnRemainingSec === 'number' && d.turnRemainingSec >= 0) {
+      // En güvenilir kaynak: göreceli kalan süre (saat farkından etkilenmez)
+      // turnRemainingSec = -1 ise oyun henüz başlamadı (backend sentinel)
+      const startedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(0, d.turnRemainingSec));
       startTimer(startedAt, turnDur);
+    } else if (d.turnStartedAt && d.turnStartedAt > 0 && d.turnRemainingSec !== -1) {
+      // Fallback: mutlak başlangıç zamanı (sadece turnRemainingSec gelmezse)
+      startTimer(d.turnStartedAt, turnDur);
     } else {
-      // Henüz turnStartedAt yok — "—" göster, SSE gelince düzelir
+      // Oyun henüz başlamadı (WAITING_FOR_PLAYERS) — "—" göster
       state.turnStartedAt = 0;
       state.turnDuration = turnDur;
       syncTimerFromClock();
     }
+
 
     renderUnits();
     drawMap();

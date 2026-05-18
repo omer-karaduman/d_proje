@@ -207,7 +207,18 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 		"turn":             state.Turn,
 		"turnStartedAt":    state.TurnStartedAt,
 		"turnDurationSec":  int(state.Session.TurnDuration),
-		"turnRemainingSec": int(state.Session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt),
+		// turnRemainingSec: -1 when game has not started (WAITING_FOR_PLAYERS).
+		// Frontend treats any value < 0 as "lobby" and shows "—" on the timer.
+		"turnRemainingSec": func() int {
+			if state.Session.Phase != game.InProgress {
+				return -1
+			}
+			rem := int(state.Session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt)
+			if rem < 0 {
+				return 0
+			}
+			return rem
+		}(),
 		"units":            publicUnits,
 		"regions":          state.Regions,
 		"paths":            state.Paths,
