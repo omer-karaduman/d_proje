@@ -625,8 +625,20 @@ function syncTimerFromClock() {
 }
 
 function _tickTimer() {
-  if (!state.turnStartedAt || !state.turnDuration) return;
-  const elapsed = Math.floor(Date.now() / 1000) - state.turnStartedAt;
+  // Oyun henüz başlamadıysa veya turnStartedAt geçersizse bekleme göster
+  if (!state.turnStartedAt || state.turnStartedAt <= 0 || !state.turnDuration) {
+    $('timer-text').textContent = '—';
+    $('timer-arc').setAttribute('stroke-dasharray', '100 100');
+    $('timer-arc').style.stroke = '#555';
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const elapsed = now - state.turnStartedAt;
+  // Güvenlik: elapsed negatif veya aşırı büyükse (saat kayması) düzelt
+  if (elapsed < 0 || elapsed > state.turnDuration + 5) {
+    $('timer-text').textContent = '—';
+    return;
+  }
   const remaining = Math.max(0, state.turnDuration - elapsed);
   updateTimerUI(remaining);
   if (remaining <= 0) {
@@ -674,16 +686,19 @@ async function fetchGameState() {
     // on Turn 1 if the game just started and the first tick hasn't fired yet.
     // Without this fallback, the Dark Side timer is silently never started.
     const turnDur = d.turnDurationSec || TURN_SECONDS;
-    if (d.turnStartedAt) {
+
+    if (d.turnStartedAt && d.turnStartedAt > 0) {
+      // Sunucudan geçerli başlangıç zamanı var — timer'ı başlat
       startTimer(d.turnStartedAt, turnDur);
-    } else if (typeof d.turnRemainingSec === 'number') {
-      // Server sent remaining seconds — back-calculate epoch
+    } else if (typeof d.turnRemainingSec === 'number' && d.turnRemainingSec > 0) {
+      // Kalan süreden başlangıç zamanını hesapla
       const startedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, d.turnRemainingSec));
       startTimer(startedAt, turnDur);
     } else {
-      // FIX: Dark Side Turn 1 fallback — server hasn't emitted turnStartedAt yet.
-      // Start from "now" so the timer shows 60s counting down (will resync on next SSE).
-      startTimer(Math.floor(Date.now() / 1000), turnDur);
+      // Henüz turnStartedAt yok — "—" göster, SSE gelince düzelir
+      state.turnStartedAt = 0;
+      state.turnDuration = turnDur;
+      syncTimerFromClock();
     }
 
     renderUnits();

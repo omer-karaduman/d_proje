@@ -1,4 +1,4 @@
-﻿{
+{
   "type": "record",
   "name": "OrderValidated",
   "namespace": "middleearth.game",
@@ -11,4 +11,3 @@
     {"name": "timestamp", "type": "long"}
   ]
 }
-
