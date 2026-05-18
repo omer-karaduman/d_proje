@@ -42,36 +42,36 @@ function unitIcon(uid) {
 // Minimum guaranteed gap between any two circle edges (r=16): ≥20px.
 const REGION_POS = {
   // North-West (Shire → Rivendell)
-  'the-shire':     { x:  72, y:  88 },
-  'bree':          { x: 196, y:  80 },
-  'tharbad':       { x: 150, y: 200 },
-  'weathertop':    { x: 288, y:  68 },
-  'rivendell':     { x: 378, y:  56 },
+  'the-shire': { x: 72, y: 88 },
+  'bree': { x: 196, y: 80 },
+  'tharbad': { x: 150, y: 200 },
+  'weathertop': { x: 288, y: 68 },
+  'rivendell': { x: 378, y: 56 },
 
   // West (Rohan / Isengard cluster)
   'fords-of-isen': { x: 188, y: 270 },
-  'fangorn':       { x: 250, y: 320 },
-  'rohan-plains':  { x: 318, y: 302 },
-  'isengard':      { x: 196, y: 374 },   // was 220,370 — moved left to clear helms-deep
-  'helms-deep':    { x: 252, y: 390 },   // was 250,370 — pushed down
-  'edoras':        { x: 334, y: 408 },
+  'fangorn': { x: 250, y: 320 },
+  'rohan-plains': { x: 318, y: 302 },
+  'isengard': { x: 196, y: 374 },   // was 220,370 — moved left to clear helms-deep
+  'helms-deep': { x: 252, y: 390 },   // was 250,370 — pushed down
+  'edoras': { x: 334, y: 408 },
 
   // Centre column (Moria → Lothlorien → Emyn Muil)
-  'moria':         { x: 418, y: 186 },
-  'lothlorien':    { x: 472, y: 258 },   // was 450,240 → right+down (+22,+18)
-  'emyn-muil':     { x: 536, y: 206 },   // was 510,250 → right+up (+26,-44)
-  'dead-marshes':  { x: 574, y: 288 },   // was 530,310 → right+up (+44,-22)
+  'moria': { x: 418, y: 186 },
+  'lothlorien': { x: 472, y: 258 },   // was 450,240 → right+down (+22,+18)
+  'emyn-muil': { x: 536, y: 206 },   // was 510,250 → right+up (+26,-44)
+  'dead-marshes': { x: 574, y: 288 },   // was 530,310 → right+up (+44,-22)
 
   // South / Gondor cluster — most overlap was here
-  'minas-tirith':  { x: 434, y: 452 },
-  'ithilien':      { x: 544, y: 370 },   // was 570,390 → left+up (-26,-20)
-  'osgiliath':     { x: 492, y: 462 },   // was 510,430 → left+down (-18,+32)
-  'minas-morgul':  { x: 598, y: 474 },   // was 590,450 → right+down (+8,+24)
-  'cirith-ungol':  { x: 664, y: 420 },
+  'minas-tirith': { x: 434, y: 452 },
+  'ithilien': { x: 544, y: 370 },   // was 570,390 → left+up (-26,-20)
+  'osgiliath': { x: 492, y: 462 },   // was 510,430 → left+down (-18,+32)
+  'minas-morgul': { x: 598, y: 474 },   // was 590,450 → right+down (+8,+24)
+  'cirith-ungol': { x: 664, y: 420 },
 
   // Mordor / Mount Doom
-  'mordor':        { x: 708, y: 512 },
-  'mount-doom':    { x: 804, y: 544 },
+  'mordor': { x: 708, y: 512 },
+  'mount-doom': { x: 804, y: 544 },
 };
 
 // ── Paths ─────────────────────────────────────────────────────────────
@@ -275,7 +275,7 @@ function handleServerEvent(msg) {
         const turnDur = msg.turnDurationSec || TURN_SECONDS;
         // CLOCK DRIFT FIX: turnRemainingSec öncelikli — sunucu saatiyle
         // tarayıcı saati arasındaki farktan etkilenmez.
-        if (typeof msg.turnRemainingSec === 'number') {
+        if (typeof msg.turnRemainingSec === 'number' && msg.turnRemainingSec >= 0) {
           state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(0, msg.turnRemainingSec));
           state.turnDuration = turnDur;
         } else if (msg.turnStartedAt) {
@@ -536,7 +536,7 @@ function resizeCanvas() {
   // Read the actual rendered CSS size (getBoundingClientRect is reliable even
   // before explicit layout; falls back to HTML attribute values).
   const rect = canvas.getBoundingClientRect();
-  const cssW = rect.width  || parseInt(canvas.getAttribute('width'))  || 900;
+  const cssW = rect.width || parseInt(canvas.getAttribute('width')) || 900;
   const cssH = rect.height || parseInt(canvas.getAttribute('height')) || 620;
 
   _logicalW = cssW;
@@ -544,7 +544,7 @@ function resizeCanvas() {
 
   // Physical draw-buffer = logical × DPR (Retina-sharp).
   // Do NOT set canvas.style.width/height — let CSS width:100%/height:100% handle display size.
-  canvas.width  = Math.round(cssW * dpr);
+  canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
@@ -633,7 +633,6 @@ function syncTimerFromClock() {
 }
 
 function _tickTimer() {
-  // Oyun henüz başlamadıysa veya turnStartedAt geçersizse bekleme göster
   if (!state.turnStartedAt || state.turnStartedAt <= 0 || !state.turnDuration) {
     $('timer-text').textContent = '—';
     $('timer-arc').setAttribute('stroke-dasharray', '100 100');
@@ -641,14 +640,7 @@ function _tickTimer() {
     return;
   }
   const now = Math.floor(Date.now() / 1000);
-  const elapsed = now - state.turnStartedAt;
-  // Güvenlik: elapsed negatif veya aşırı büyükse (saat kayması) düzelt
-  // Saat kayması toleransı genişletildi: ±30s izin ver, geri kalanını sıfırla
-  if (elapsed < -30) {
-    $('timer-text').textContent = '—';
-    return;
-  }
-  if (elapsed < 0) elapsed = 0; // küçük negatif drift — sıfıra say
+  const elapsed = Math.max(0, now - state.turnStartedAt); // const, Math.max ile güvenli
   const remaining = Math.max(0, state.turnDuration - elapsed);
   updateTimerUI(remaining);
   if (remaining <= 0) {
@@ -691,23 +683,18 @@ async function fetchGameState() {
     if (d.lastDetectedRegion) state.lastDetectedRegion = d.lastDetectedRegion;
     $('turn-number').textContent = state.turn;
 
-    // CLOCK DRIFT FIX: turnRemainingSec her zaman öncelikli.
-    // Sunucu saatiyle tarayıcı saati arasındaki fark timer'ı bozmasın.
+    // ÖNCELiK: turnRemainingSec her zaman önce — saat kaymasından etkilenmez.
     const turnDur = d.turnDurationSec || TURN_SECONDS;
 
     if (typeof d.turnRemainingSec === 'number' && d.turnRemainingSec >= 0) {
-      // En güvenilir kaynak: göreceli kalan süre (saat farkından etkilenmez)
-      // turnRemainingSec = -1 ise oyun henüz başlamadı (backend sentinel)
-      const startedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(0, d.turnRemainingSec));
+      const startedAt = Math.floor(Date.now() / 1000) - (turnDur - d.turnRemainingSec);
       startTimer(startedAt, turnDur);
-    } else if (d.turnStartedAt && d.turnStartedAt > 0 && d.turnRemainingSec !== -1) {
-      // Fallback: mutlak başlangıç zamanı (sadece turnRemainingSec gelmezse)
+    } else if (d.turnStartedAt && d.turnStartedAt > 0) {
       startTimer(d.turnStartedAt, turnDur);
     } else {
-      // Oyun henüz başlamadı (WAITING_FOR_PLAYERS) — "—" göster
-      state.turnStartedAt = 0;
-      state.turnDuration = turnDur;
-      syncTimerFromClock();
+      $('timer-text').textContent = '—';
+      $('timer-arc').setAttribute('stroke-dasharray', '100 100');
+      $('timer-arc').style.stroke = '#555';
     }
 
 
@@ -801,7 +788,7 @@ function getMapTransform() {
   // Scale that fits the map bounding box inside the canvas with padding
   const scaleX = (W - PADDING * 2) / (maxX - minX);
   const scaleY = (H - PADDING * 2) / (maxY - minY);
-  const scale  = Math.min(scaleX, scaleY); // uniform scale keeps aspect ratio
+  const scale = Math.min(scaleX, scaleY); // uniform scale keeps aspect ratio
 
   // Translate so the scaled map bounding box is centred
   const mapW = (maxX - minX) * scale;
@@ -814,11 +801,11 @@ function getMapTransform() {
 
 function drawMap() {
   if (!ctx) return;
-  const dpr  = window.devicePixelRatio || 1;
+  const dpr = window.devicePixelRatio || 1;
   // Derive logical dims from the physical buffer (always current, DPR-independent).
-  const W    = canvas.width  / dpr;
-  const H    = canvas.height / dpr;
-  const now  = Date.now();
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
+  const now = Date.now();
 
   // 1. Clear entire physical buffer
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -826,37 +813,37 @@ function drawMap() {
 
   // 2. Full-canvas vignette background (DPR scale, no map offset)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const _bgG = ctx.createRadialGradient(W*.5,H*.44,0, W*.5,H*.44, Math.max(W,H)*.72);
-  _bgG.addColorStop(0,'#0f0f20'); _bgG.addColorStop(1,'#030308');
+  const _bgG = ctx.createRadialGradient(W * .5, H * .44, 0, W * .5, H * .44, Math.max(W, H) * .72);
+  _bgG.addColorStop(0, '#0f0f20'); _bgG.addColorStop(1, '#030308');
   ctx.fillStyle = _bgG;
   ctx.fillRect(0, 0, W, H);
 
   // 3. Compute bounding box of all REGION_POS and centering offset
   const _pos = Object.values(REGION_POS);
-  const minX = Math.min(..._pos.map(p=>p.x));
-  const maxX = Math.max(..._pos.map(p=>p.x));
-  const minY = Math.min(..._pos.map(p=>p.y));
-  const maxY = Math.max(..._pos.map(p=>p.y));
-  const PAD  = 56; // breathing room for labels on all sides
-  const scale = Math.min((W - PAD*2)/(maxX-minX), (H - PAD*2)/(maxY-minY));
-  const offsetX = (W - (maxX-minX)*scale)/2 - minX*scale;
-  const offsetY = (H - (maxY-minY)*scale)/2 - minY*scale;
+  const minX = Math.min(..._pos.map(p => p.x));
+  const maxX = Math.max(..._pos.map(p => p.x));
+  const minY = Math.min(..._pos.map(p => p.y));
+  const maxY = Math.max(..._pos.map(p => p.y));
+  const PAD = 56; // breathing room for labels on all sides
+  const scale = Math.min((W - PAD * 2) / (maxX - minX), (H - PAD * 2) / (maxY - minY));
+  const offsetX = (W - (maxX - minX) * scale) / 2 - minX * scale;
+  const offsetY = (H - (maxY - minY) * scale) / 2 - minY * scale;
 
   // 4. Single setTransform that combines DPR + centering translation.
   //    All subsequent draws just use  pos.x * scale, pos.y * scale.
-  ctx.setTransform(dpr, 0, 0, dpr, offsetX*dpr, offsetY*dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, offsetX * dpr, offsetY * dpr);
   const scaleX = scale, scaleY = scale, s = scale;
 
   // ── 0b. Helpers ──────────────────────────────────────────────────────────────
   // Rounded-rect path (browser-safe)
   const _rr = (x, y, w, h, r) => {
-    const ri = Math.min(r ?? 3, w/2, h/2);
+    const ri = Math.min(r ?? 3, w / 2, h / 2);
     ctx.beginPath();
-    ctx.moveTo(x+ri, y);
-    ctx.lineTo(x+w-ri, y);  ctx.arc(x+w-ri, y+ri,    ri, -Math.PI/2, 0);
-    ctx.lineTo(x+w, y+h-ri); ctx.arc(x+w-ri, y+h-ri, ri,  0, Math.PI/2);
-    ctx.lineTo(x+ri, y+h);   ctx.arc(x+ri,   y+h-ri, ri,  Math.PI/2, Math.PI);
-    ctx.lineTo(x, y+ri);     ctx.arc(x+ri,   y+ri,   ri,  Math.PI, -Math.PI/2);
+    ctx.moveTo(x + ri, y);
+    ctx.lineTo(x + w - ri, y); ctx.arc(x + w - ri, y + ri, ri, -Math.PI / 2, 0);
+    ctx.lineTo(x + w, y + h - ri); ctx.arc(x + w - ri, y + h - ri, ri, 0, Math.PI / 2);
+    ctx.lineTo(x + ri, y + h); ctx.arc(x + ri, y + h - ri, ri, Math.PI / 2, Math.PI);
+    ctx.lineTo(x, y + ri); ctx.arc(x + ri, y + ri, ri, Math.PI, -Math.PI / 2);
     ctx.closePath();
   };
 
@@ -874,17 +861,17 @@ function drawMap() {
 
   // Draw a single premium unit token
   const drawUnitToken = (uid, u, ux, uy, isSelected, hasPending) => {
-    const disp     = UNIT_DISPLAY[uid] || { icon: '🔹', name: uid };
-    const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
-    const side     = (u.side || '').toUpperCase();
+    const disp = UNIT_DISPLAY[uid] || { icon: '🔹', name: uid };
+    const shadowIds = ['witch-king', 'nazgul-2', 'nazgul-3', 'uruk-hai-legion', 'saruman', 'sauron'];
+    const side = (u.side || '').toUpperCase();
     const isShadow = side === 'SHADOW' || (side === '' && shadowIds.includes(uid));
-    const R        = Math.round(14 * s); // token radius — increased from 11 for visibility
+    const R = Math.round(14 * s); // token radius — increased from 11 for visibility
 
     // Selected: pulsing gold outer ring
     if (isSelected) {
       const gp = 0.5 + 0.5 * Math.sin(now / 350);
       ctx.beginPath();
-      ctx.arc(ux, uy, R + 5, 0, Math.PI*2);
+      ctx.arc(ux, uy, R + 5, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(201,168,76,${gp})`;
       ctx.lineWidth = 2.5;
       ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 14;
@@ -894,12 +881,12 @@ function drawMap() {
 
     // Drop shadow under token
     ctx.beginPath();
-    ctx.arc(ux, uy + 2, R, 0, Math.PI*2);
+    ctx.arc(ux, uy + 2, R, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fill();
 
     // Token background — radial gradient for a polished 3-D pill look
-    const tg = ctx.createRadialGradient(ux - R*.3, uy - R*.3, 0, ux, uy, R);
+    const tg = ctx.createRadialGradient(ux - R * .3, uy - R * .3, 0, ux, uy, R);
     if (isShadow) {
       tg.addColorStop(0, '#3a0a0a');
       tg.addColorStop(1, '#160404');
@@ -908,7 +895,7 @@ function drawMap() {
       tg.addColorStop(1, '#040c1c');
     }
     ctx.beginPath();
-    ctx.arc(ux, uy, R, 0, Math.PI*2);
+    ctx.arc(ux, uy, R, 0, Math.PI * 2);
     ctx.fillStyle = tg;
     ctx.fill();
 
@@ -917,7 +904,7 @@ function drawMap() {
       ? (hasPending ? '#ffaa44' : '#cc2200')
       : (hasPending ? '#ffdd55' : '#3a8eff');
     ctx.beginPath();
-    ctx.arc(ux, uy, R, 0, Math.PI*2);
+    ctx.arc(ux, uy, R, 0, Math.PI * 2);
     ctx.strokeStyle = borderCol;
     ctx.lineWidth = hasPending ? 2.5 : 2;
     ctx.stroke();
@@ -925,21 +912,21 @@ function drawMap() {
     // Emoji — pixel-perfect centred
     const iconPx = Math.round(12 * s);
     ctx.font = `${iconPx}px Inter, sans-serif`;
-    ctx.textAlign    = 'center';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(disp.icon, ux, uy);
     ctx.textBaseline = 'alphabetic';
 
     // Unit short-name label (first word) with outstroked text
-    const label  = (disp.name || uid).split(/[\s,]/)[0];
-    const lPx    = Math.round(6 * s);
-    const ly     = uy + R + 9;
+    const label = (disp.name || uid).split(/[\s,]/)[0];
+    const lPx = Math.round(6 * s);
+    const ly = uy + R + 9;
     _txt(label, ux, ly, isShadow ? '#ffcccc' : '#cce4ff', lPx);
 
     // Pending gold dot (top-right)
     if (hasPending) {
       ctx.beginPath();
-      ctx.arc(ux + R - 2, uy - R + 2, 3.5, 0, Math.PI*2);
+      ctx.arc(ux + R - 2, uy - R + 2, 3.5, 0, Math.PI * 2);
       ctx.fillStyle = '#c9a84c';
       ctx.fill();
     }
@@ -948,10 +935,10 @@ function drawMap() {
   // ── 0c. Sauron-in-Mordor detection (needed for section 6) ───────────────────
   const sauronInMordor = (() => {
     const s = Object.values(state.units).find(u => {
-      const id = Object.entries(state.units).find(([,v]) => v === u)?.[0] || '';
-      const isSauron = (u.side||'').toUpperCase() === 'SHADOW' &&
-                       (u.class === 'MAIA' || id === 'sauron');
-      return isSauron && u.region === 'mordor' && (u.status||'ACTIVE').toUpperCase() === 'ACTIVE';
+      const id = Object.entries(state.units).find(([, v]) => v === u)?.[0] || '';
+      const isSauron = (u.side || '').toUpperCase() === 'SHADOW' &&
+        (u.class === 'MAIA' || id === 'sauron');
+      return isSauron && u.region === 'mordor' && (u.status || 'ACTIVE').toUpperCase() === 'ACTIVE';
     });
     return !!s;
   })();
@@ -959,25 +946,25 @@ function drawMap() {
   // ── 0d. Nazgul detection aura ───────────────────────────────────────────────
   const nazgulUnits = Object.entries(state.units).filter(([uid, u]) => {
     const cfg = (state.unitConfigs || {})[uid] || {};
-    return (cfg.detectionRange || 0) > 0 && (u.status||'ACTIVE').toUpperCase() === 'ACTIVE' && u.region;
+    return (cfg.detectionRange || 0) > 0 && (u.status || 'ACTIVE').toUpperCase() === 'ACTIVE' && u.region;
   });
   if (state.side === 'FREE_PEOPLES') {
     nazgulUnits.forEach(([uid, u]) => {
       const pos = REGION_POS[u.region]; if (!pos) return;
-      const cfg = (state.unitConfigs||{})[uid]||{};
-      const effectiveRange = (cfg.detectionRange||2) * 1.5;
+      const cfg = (state.unitConfigs || {})[uid] || {};
+      const effectiveRange = (cfg.detectionRange || 2) * 1.5;
       const sx = pos.x * scaleX, sy = pos.y * scaleY;
       const auraR = effectiveRange * 55 * s;
       const ag = ctx.createRadialGradient(sx, sy, 0, sx, sy, auraR);
       ag.addColorStop(0, 'rgba(180,0,0,0.12)');
       ag.addColorStop(1, 'rgba(180,0,0,0)');
       ctx.beginPath();
-      ctx.arc(sx, sy, auraR, 0, Math.PI*2);
+      ctx.arc(sx, sy, auraR, 0, Math.PI * 2);
       ctx.fillStyle = ag;
       ctx.fill();
-      ctx.font = `${Math.round(11*s)}px Inter, sans-serif`;
+      ctx.font = `${Math.round(11 * s)}px Inter, sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('👁️', sx, sy - 28*s);
+      ctx.fillText('👁️', sx, sy - 28 * s);
       ctx.textBaseline = 'alphabetic';
     });
   }
@@ -986,119 +973,120 @@ function drawMap() {
   PATHS.forEach(p => {
     const a = REGION_POS[p.from], b = REGION_POS[p.to];
     if (!a || !b) return;
-    const pd   = state.paths[p.id] || {};
+    const pd = state.paths[p.id] || {};
     const high = state.highlightedPaths?.includes(p.id);
-    const ax = a.x*scaleX, ay = a.y*scaleY;
-    const bx = b.x*scaleX, by = b.y*scaleY;
-    const mx = (ax+bx)/2, my = (ay+by)/2;
+    const ax = a.x * scaleX, ay = a.y * scaleY;
+    const bx = b.x * scaleX, by = b.y * scaleY;
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
 
     let col, lw, dash, glowCol, glowR;
-    if (high)                           { col='#e8cc7a'; lw=3.5; dash=[];      glowCol='#c9a84c'; glowR=12; }
-    else if (pd.status==='BLOCKED')     { const p0=.6+.4*Math.sin(now/600);
-                                          col=`rgba(220,30,30,${p0})`; lw=3.5; dash=[6,4]; glowCol='#8b0000'; glowR=16; }
-    else if (pd.status==='TEMPORARILY_OPEN') { col='#5ab4ff'; lw=2.5; dash=[8,3]; glowCol='#4a90d9'; glowR=14; }
-    else if (pd.status==='THREATENED')  { col='#d45500'; lw=2.2; dash=[5,3];  glowCol='#c04000'; glowR=6; }
-    else if ((pd.surveillanceLevel||0)>=3){ col='#9050d0'; lw=2;   dash=[4,2]; glowCol='#8040c0'; glowR=8; }
-    else if ((pd.surveillanceLevel||0)===2){ col='#b04070'; lw=1.8; dash=[4,3]; glowCol='none';   glowR=0; }
-    else if ((pd.surveillanceLevel||0)===1){ col='#703050'; lw=1.5; dash=[3,4]; glowCol='none';   glowR=0; }
-    else                                { col='#1e1e30'; lw=1.5; dash=[];      glowCol='none';   glowR=0; }
+    if (high) { col = '#e8cc7a'; lw = 3.5; dash = []; glowCol = '#c9a84c'; glowR = 12; }
+    else if (pd.status === 'BLOCKED') {
+      const p0 = .6 + .4 * Math.sin(now / 600);
+      col = `rgba(220,30,30,${p0})`; lw = 3.5; dash = [6, 4]; glowCol = '#8b0000'; glowR = 16;
+    }
+    else if (pd.status === 'TEMPORARILY_OPEN') { col = '#5ab4ff'; lw = 2.5; dash = [8, 3]; glowCol = '#4a90d9'; glowR = 14; }
+    else if (pd.status === 'THREATENED') { col = '#d45500'; lw = 2.2; dash = [5, 3]; glowCol = '#c04000'; glowR = 6; }
+    else if ((pd.surveillanceLevel || 0) >= 3) { col = '#9050d0'; lw = 2; dash = [4, 2]; glowCol = '#8040c0'; glowR = 8; }
+    else if ((pd.surveillanceLevel || 0) === 2) { col = '#b04070'; lw = 1.8; dash = [4, 3]; glowCol = 'none'; glowR = 0; }
+    else if ((pd.surveillanceLevel || 0) === 1) { col = '#703050'; lw = 1.5; dash = [3, 4]; glowCol = 'none'; glowR = 0; }
+    else { col = '#1e1e30'; lw = 1.5; dash = []; glowCol = 'none'; glowR = 0; }
 
     // Layer 1: dark road base
-    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
-    ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=lw+3; ctx.setLineDash([]); ctx.shadowBlur=0;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = lw + 3; ctx.setLineDash([]); ctx.shadowBlur = 0;
     ctx.stroke();
 
     // Layer 2: coloured status line
-    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
-    ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.setLineDash(dash);
-    ctx.shadowColor=glowCol; ctx.shadowBlur=glowR;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.setLineDash(dash);
+    ctx.shadowColor = glowCol; ctx.shadowBlur = glowR;
     ctx.stroke();
-    ctx.setLineDash([]); ctx.shadowBlur=0;
+    ctx.setLineDash([]); ctx.shadowBlur = 0;
 
     // Midpoint icon
-    const iPx = Math.round(12*s);
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    if (pd.status==='BLOCKED')          { ctx.font=`${iPx}px Inter,sans-serif`; ctx.fillText('🚫',mx,my); }
-    else if (pd.status==='TEMPORARILY_OPEN') { ctx.font=`${iPx}px Inter,sans-serif`; ctx.fillText('✨',mx,my); }
-    else if ((pd.surveillanceLevel||0)>0) {
-      const dotCol = (pd.surveillanceLevel||0)>=3 ? '#c080ff' : (pd.surveillanceLevel||0)===2 ? '#ff7090' : '#a04060';
-      const dots = '●'.repeat(pd.surveillanceLevel||0);
-      ctx.font=`${Math.round(7*s)}px Inter,sans-serif`;
-      const dw=ctx.measureText(dots).width;
-      _rr(mx-dw/2-3, my-6, dw+6, 10, 3);
-      ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fill();
-      ctx.fillStyle=dotCol; ctx.fillText(dots,mx,my);
+    const iPx = Math.round(12 * s);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (pd.status === 'BLOCKED') { ctx.font = `${iPx}px Inter,sans-serif`; ctx.fillText('🚫', mx, my); }
+    else if (pd.status === 'TEMPORARILY_OPEN') { ctx.font = `${iPx}px Inter,sans-serif`; ctx.fillText('✨', mx, my); }
+    else if ((pd.surveillanceLevel || 0) > 0) {
+      const dotCol = (pd.surveillanceLevel || 0) >= 3 ? '#c080ff' : (pd.surveillanceLevel || 0) === 2 ? '#ff7090' : '#a04060';
+      const dots = '●'.repeat(pd.surveillanceLevel || 0);
+      ctx.font = `${Math.round(7 * s)}px Inter,sans-serif`;
+      const dw = ctx.measureText(dots).width;
+      _rr(mx - dw / 2 - 3, my - 6, dw + 6, 10, 3);
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fill();
+      ctx.fillStyle = dotCol; ctx.fillText(dots, mx, my);
     }
-    ctx.textBaseline='alphabetic';
+    ctx.textBaseline = 'alphabetic';
   });
 
   // ── 2. Region nodes — radial-gradient for depth/polish ──────────────────────
   for (const [id, pos] of Object.entries(REGION_POS)) {
-    const meta    = REGION_META[id] || {};
-    const rd      = state.regions[id] || {};
+    const meta = REGION_META[id] || {};
+    const rd = state.regions[id] || {};
     const hovered = state.hoveredRegion === id;
-    const sx = pos.x*scaleX, sy = pos.y*scaleY;
-    const R  = hovered ? 19 : 16;
+    const sx = pos.x * scaleX, sy = pos.y * scaleY;
+    const R = hovered ? 19 : 16;
     const usc = Math.min(scaleX, scaleY);
 
     // Drop shadow
-    ctx.beginPath(); ctx.arc(sx, sy+2, R+1, 0, Math.PI*2);
-    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(sx, sy + 2, R + 1, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill();
 
     // Landmark glow
     ctx.shadowBlur = 0;
-    if      (id==='mount-doom')  { ctx.shadowColor='#ff4400'; ctx.shadowBlur=hovered?30:18; }
-    else if (id==='the-shire')   { ctx.shadowColor='#4a90d9'; ctx.shadowBlur=hovered?16:8; }
-    else if (id==='mordor'||id==='isengard'||id==='minas-morgul')
-                                 { ctx.shadowColor='#8b0000'; ctx.shadowBlur=hovered?14:7; }
-    else if (rd.fortified)       { ctx.shadowColor='#c9a84c'; ctx.shadowBlur=10; }
-    else if (hovered)            { ctx.shadowColor='rgba(201,168,76,0.7)'; ctx.shadowBlur=14; }
+    if (id === 'mount-doom') { ctx.shadowColor = '#ff4400'; ctx.shadowBlur = hovered ? 30 : 18; }
+    else if (id === 'the-shire') { ctx.shadowColor = '#4a90d9'; ctx.shadowBlur = hovered ? 16 : 8; }
+    else if (id === 'mordor' || id === 'isengard' || id === 'minas-morgul') { ctx.shadowColor = '#8b0000'; ctx.shadowBlur = hovered ? 14 : 7; }
+    else if (rd.fortified) { ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 10; }
+    else if (hovered) { ctx.shadowColor = 'rgba(201,168,76,0.7)'; ctx.shadowBlur = 14; }
 
     // Terrain fill — RADIAL GRADIENT for depth (looks like a raised button/node)
     const baseCol = TERRAIN_COLOR[meta.terrain] || '#1a1a2a';
-    const rg = ctx.createRadialGradient(sx-R*.35, sy-R*.35, 0, sx, sy, R);
+    const rg = ctx.createRadialGradient(sx - R * .35, sy - R * .35, 0, sx, sy, R);
     rg.addColorStop(0, lightenColor(baseCol, 0.60));  // brighter highlight
     rg.addColorStop(0.55, baseCol);
-    rg.addColorStop(1,   darkenColor(baseCol, 0.45));
-    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI*2);
+    rg.addColorStop(1, darkenColor(baseCol, 0.45));
+    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2);
     ctx.fillStyle = rg; ctx.fill();
     ctx.shadowBlur = 0;
 
     // Control ring
     let ringCol;
-    if      (rd.controlledBy==='SHADOW')       ringCol='rgba(200,20,20,0.9)';
-    else if (rd.controlledBy==='FREE_PEOPLES') ringCol='rgba(45,140,74,0.9)';
-    else if (hovered)                          ringCol='rgba(201,168,76,0.95)';
-    else                                       ringCol='rgba(60,60,85,0.8)';
-    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI*2);
-    ctx.strokeStyle=ringCol; ctx.lineWidth=hovered?3:2; ctx.stroke();
+    if (rd.controlledBy === 'SHADOW') ringCol = 'rgba(200,20,20,0.9)';
+    else if (rd.controlledBy === 'FREE_PEOPLES') ringCol = 'rgba(45,140,74,0.9)';
+    else if (hovered) ringCol = 'rgba(201,168,76,0.95)';
+    else ringCol = 'rgba(60,60,85,0.8)';
+    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = ringCol; ctx.lineWidth = hovered ? 3 : 2; ctx.stroke();
 
     // Fortification dashed outer ring
     if (rd.fortified) {
-      ctx.beginPath(); ctx.arc(sx, sy, R+5, 0, Math.PI*2);
-      ctx.strokeStyle='rgba(201,168,76,0.6)'; ctx.lineWidth=2;
-      ctx.setLineDash([4,2]); ctx.stroke(); ctx.setLineDash([]);
-      ctx.font=`${Math.round(9*usc)}px Inter,sans-serif`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('🛡️', sx+R-1, sy-R+1);
-      ctx.textBaseline='alphabetic';
+      ctx.beginPath(); ctx.arc(sx, sy, R + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(201,168,76,0.6)'; ctx.lineWidth = 2;
+      ctx.setLineDash([4, 2]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = `${Math.round(9 * usc)}px Inter,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🛡️', sx + R - 1, sy - R + 1);
+      ctx.textBaseline = 'alphabetic';
     }
 
     // Region name — outstroked for legibility
     const labelY = sy + R + 14;
-    const fPx    = Math.round(hovered ? 9.5*usc : 8.5*usc);
+    const fPx = Math.round(hovered ? 9.5 * usc : 8.5 * usc);
     _txt(meta.name || id, sx, labelY, hovered ? '#e8e0cc' : '#b8b0cc', fPx, hovered);
 
     // High-threat badge (≥4 only)
     const threat = rd.threatLevel ?? meta.threat ?? 0;
     if (threat >= 4) {
-      const tPx  = Math.round(8*usc);
+      const tPx = Math.round(8 * usc);
       const tTxt = `⚠ ${threat}`;
-      ctx.font   = `bold ${tPx}px Inter,sans-serif`;
-      const tW   = ctx.measureText(tTxt).width;
-      const tY   = sy - R - 6;
-      _rr(sx-tW/2-4, tY-tPx-1, tW+8, tPx+4, 3);
-      ctx.fillStyle='rgba(100,0,0,0.8)'; ctx.fill();
+      ctx.font = `bold ${tPx}px Inter,sans-serif`;
+      const tW = ctx.measureText(tTxt).width;
+      const tY = sy - R - 6;
+      _rr(sx - tW / 2 - 4, tY - tPx - 1, tW + 8, tPx + 4, 3);
+      ctx.fillStyle = 'rgba(100,0,0,0.8)'; ctx.fill();
       _txt(tTxt, sx, tY, '#ff5555', tPx, true, 1.5);
     }
   }
@@ -1107,38 +1095,38 @@ function drawMap() {
   const byRegion = {};
   Object.entries(state.units).forEach(([uid, u]) => {
     if (!u.region) return;
-    if ((u.status||'ACTIVE').toUpperCase() !== 'ACTIVE') return;
+    if ((u.status || 'ACTIVE').toUpperCase() !== 'ACTIVE') return;
     (byRegion[u.region] = byRegion[u.region] || []).push({ uid, u });
   });
 
   Object.entries(byRegion).forEach(([regionId, units]) => {
     const pos = REGION_POS[regionId]; if (!pos) return;
-    const cx = pos.x*scaleX, cy = pos.y*scaleY;
+    const cx = pos.x * scaleX, cy = pos.y * scaleY;
     const total = units.length;
     // Cluster radius — must be > 2×tokenRadius (R≈14px) to prevent overlap.
     // Using a fixed pixel value so it scales correctly with the canvas.
     const tokenR = Math.round(14 * s);
-    const CR = total===1 ? 0 : total===2 ? tokenR*2+6 : total<=4 ? tokenR*2+8 : tokenR*2+14;
+    const CR = total === 1 ? 0 : total === 2 ? tokenR * 2 + 6 : total <= 4 ? tokenR * 2 + 8 : tokenR * 2 + 14;
 
     units.forEach(({ uid, u }, i) => {
       const isSelected = state.selectedUnit === uid;
       const hasPending = !!state.pendingOrders[uid];
       // Evenly spaced arc; single unit stays centred
-      const angle = total===1 ? -Math.PI/2 : (i/total)*Math.PI*2 - Math.PI/2;
-      const ux = cx + Math.cos(angle)*CR;
-      const uy = cy + Math.sin(angle)*CR;
+      const angle = total === 1 ? -Math.PI / 2 : (i / total) * Math.PI * 2 - Math.PI / 2;
+      const ux = cx + Math.cos(angle) * CR;
+      const uy = cy + Math.sin(angle) * CR;
       drawUnitToken(uid, u, ux, uy, isSelected, hasPending);
     });
 
     // Count badge for 3+ unit clusters
     if (total >= 3) {
       const bx = cx + CR + 8, by = cy - CR - 4;
-      ctx.beginPath(); ctx.arc(bx, by, 8, 0, Math.PI*2);
-      ctx.fillStyle='#c9a84c'; ctx.fill();
-      ctx.font=`bold ${Math.round(8*s)}px Inter,sans-serif`;
-      ctx.fillStyle='#0a0a14'; ctx.textAlign='center';
-      ctx.textBaseline='middle'; ctx.fillText(String(total),bx,by);
-      ctx.textBaseline='alphabetic';
+      ctx.beginPath(); ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#c9a84c'; ctx.fill();
+      ctx.font = `bold ${Math.round(8 * s)}px Inter,sans-serif`;
+      ctx.fillStyle = '#0a0a14'; ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle'; ctx.fillText(String(total), bx, by);
+      ctx.textBaseline = 'alphabetic';
     }
   });
 
@@ -1146,16 +1134,16 @@ function drawMap() {
   if (state.side !== 'SHADOW' && state.ringBearerRegion) {
     const pos = REGION_POS[state.ringBearerRegion];
     if (pos) {
-      const pulse = .55 + .45*Math.sin(now/700);
-      const sx = pos.x*scaleX, sy = pos.y*scaleY;
-      ctx.beginPath(); ctx.arc(sx,sy,25,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(255,235,59,${pulse})`; ctx.lineWidth=3;
-      ctx.shadowColor='#ffeb3b'; ctx.shadowBlur=20; ctx.stroke(); ctx.shadowBlur=0;
-      ctx.beginPath(); ctx.arc(sx,sy,16,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(255,235,59,${pulse*.45})`; ctx.lineWidth=1.5; ctx.stroke();
-      ctx.font=`${Math.round(14*s)}px Inter,sans-serif`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('💍',sx,sy); ctx.textBaseline='alphabetic';
+      const pulse = .55 + .45 * Math.sin(now / 700);
+      const sx = pos.x * scaleX, sy = pos.y * scaleY;
+      ctx.beginPath(); ctx.arc(sx, sy, 25, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,235,59,${pulse})`; ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffeb3b'; ctx.shadowBlur = 20; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(sx, sy, 16, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,235,59,${pulse * .45})`; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.font = `${Math.round(14 * s)}px Inter,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('💍', sx, sy); ctx.textBaseline = 'alphabetic';
     }
   }
 
@@ -1163,15 +1151,15 @@ function drawMap() {
   if (state.side === 'SHADOW' && state.lastDetectedRegion) {
     const pos = REGION_POS[state.lastDetectedRegion];
     if (pos) {
-      const pulse = .5+.5*Math.abs(Math.sin(now/500));
-      const sx = pos.x*scaleX, sy = pos.y*scaleY;
-      ctx.beginPath(); ctx.arc(sx,sy,27,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(255,68,0,${pulse})`; ctx.lineWidth=2.5;
-      ctx.setLineDash([5,4]); ctx.shadowColor='#ff4400'; ctx.shadowBlur=16;
-      ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur=0;
-      ctx.font=`${Math.round(13*s)}px Inter,sans-serif`;
-      ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('👁️',sx,sy); ctx.textBaseline='alphabetic';
+      const pulse = .5 + .5 * Math.abs(Math.sin(now / 500));
+      const sx = pos.x * scaleX, sy = pos.y * scaleY;
+      ctx.beginPath(); ctx.arc(sx, sy, 27, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,68,0,${pulse})`; ctx.lineWidth = 2.5;
+      ctx.setLineDash([5, 4]); ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 16;
+      ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+      ctx.font = `${Math.round(13 * s)}px Inter,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('👁️', sx, sy); ctx.textBaseline = 'alphabetic';
     }
   }
 
@@ -1179,11 +1167,11 @@ function drawMap() {
   if (sauronInMordor) {
     const pos = REGION_POS['mordor'];
     if (pos) {
-      const pulse = .4+.3*Math.sin(now/1200);
-      const sx = pos.x*scaleX, sy = pos.y*scaleY;
-      ctx.beginPath(); ctx.arc(sx,sy,33,0,Math.PI*2);
-      ctx.strokeStyle=`rgba(200,0,0,${pulse})`; ctx.lineWidth=1.5;
-      ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur=0;
+      const pulse = .4 + .3 * Math.sin(now / 1200);
+      const sx = pos.x * scaleX, sy = pos.y * scaleY;
+      ctx.beginPath(); ctx.arc(sx, sy, 33, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(200,0,0,${pulse})`; ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
     }
   }
 
@@ -1194,17 +1182,17 @@ function drawMap() {
 
 // Colour helpers for radial gradient region nodes
 function lightenColor(hex, amount) {
-  const n = parseInt(hex.replace('#',''),16);
-  const r = Math.min(255, ((n>>16)&0xff) + Math.round(255*amount));
-  const g = Math.min(255, ((n>>8) &0xff) + Math.round(255*amount));
-  const b = Math.min(255, ( n     &0xff) + Math.round(255*amount));
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = Math.min(255, ((n >> 16) & 0xff) + Math.round(255 * amount));
+  const g = Math.min(255, ((n >> 8) & 0xff) + Math.round(255 * amount));
+  const b = Math.min(255, (n & 0xff) + Math.round(255 * amount));
   return `rgb(${r},${g},${b})`;
 }
 function darkenColor(hex, amount) {
-  const n = parseInt(hex.replace('#',''),16);
-  const r = Math.max(0, ((n>>16)&0xff) - Math.round(255*amount));
-  const g = Math.max(0, ((n>>8) &0xff) - Math.round(255*amount));
-  const b = Math.max(0, ( n     &0xff) - Math.round(255*amount));
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = Math.max(0, ((n >> 16) & 0xff) - Math.round(255 * amount));
+  const g = Math.max(0, ((n >> 8) & 0xff) - Math.round(255 * amount));
+  const b = Math.max(0, (n & 0xff) - Math.round(255 * amount));
   return `rgb(${r},${g},${b})`;
 }
 
@@ -1229,7 +1217,7 @@ function renderUnits() {
   const isMyUnit = (uid, u) => {
     const side = (u.side || '').toUpperCase();
     if (side === 'SHADOW' || side === 'FREE_PEOPLES') return side === mySide;
-    const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
+    const shadowIds = ['witch-king', 'nazgul-2', 'nazgul-3', 'uruk-hai-legion', 'saruman', 'sauron'];
     return shadowIds.includes(uid) ? mySide === 'SHADOW' : mySide === 'FREE_PEOPLES';
   };
 
@@ -1305,22 +1293,22 @@ function renderUnits() {
 
 function onMapMouseMove(e) {
   const rect = canvas.getBoundingClientRect();
-  const dpr  = window.devicePixelRatio || 1;
-  const W    = canvas.width / dpr;
-  const H    = canvas.height / dpr;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
 
   // Mouse in logical canvas pixels
   const mx = (e.clientX - rect.left) * (W / rect.width);
-  const my = (e.clientY - rect.top)  * (H / rect.height);
+  const my = (e.clientY - rect.top) * (H / rect.height);
 
   // Inline centering math — must match drawMap exactly
   const _pos = Object.values(REGION_POS);
-  const minX = Math.min(..._pos.map(p=>p.x)), maxX = Math.max(..._pos.map(p=>p.x));
-  const minY = Math.min(..._pos.map(p=>p.y)), maxY = Math.max(..._pos.map(p=>p.y));
-  const PAD  = 56;
-  const scale   = Math.min((W-PAD*2)/(maxX-minX), (H-PAD*2)/(maxY-minY));
-  const offsetX = (W-(maxX-minX)*scale)/2 - minX*scale;
-  const offsetY = (H-(maxY-minY)*scale)/2 - minY*scale;
+  const minX = Math.min(..._pos.map(p => p.x)), maxX = Math.max(..._pos.map(p => p.x));
+  const minY = Math.min(..._pos.map(p => p.y)), maxY = Math.max(..._pos.map(p => p.y));
+  const PAD = 56;
+  const scale = Math.min((W - PAD * 2) / (maxX - minX), (H - PAD * 2) / (maxY - minY));
+  const offsetX = (W - (maxX - minX) * scale) / 2 - minX * scale;
+  const offsetY = (H - (maxY - minY) * scale) / 2 - minY * scale;
 
   // Convert to REGION_POS coordinate space
   const lx = mx - offsetX, ly = my - offsetY;
@@ -1328,8 +1316,8 @@ function onMapMouseMove(e) {
   let hit = null;
   const HIT_R = 20;
   for (const [id, pos] of Object.entries(REGION_POS)) {
-    const dx = lx - pos.x*scale, dy = ly - pos.y*scale;
-    if (Math.sqrt(dx*dx + dy*dy) < HIT_R) { hit = id; break; }
+    const dx = lx - pos.x * scale, dy = ly - pos.y * scale;
+    if (Math.sqrt(dx * dx + dy * dy) < HIT_R) { hit = id; break; }
   }
 
   if (hit !== state.hoveredRegion) {

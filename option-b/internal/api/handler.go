@@ -204,14 +204,14 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
-		"turn":             state.Turn,
-		"turnStartedAt":    state.TurnStartedAt,
-		"turnDurationSec":  int(state.Session.TurnDuration),
+		"turn":            state.Turn,
+		"turnStartedAt":   state.TurnStartedAt,
+		"turnDurationSec": int(state.Session.TurnDuration),
 		// turnRemainingSec: -1 when game has not started (WAITING_FOR_PLAYERS).
 		// Frontend treats any value < 0 as "lobby" and shows "—" on the timer.
-		"turnRemainingSec": func() int {
+		"turnRemainingSec": func() interface{} {
 			if state.Session.Phase != game.InProgress {
-				return -1
+				return nil // JSON'da null olarak gelir, frontend'de typeof null !== 'number'
 			}
 			rem := int(state.Session.TurnDuration) - int(time.Now().Unix()-state.TurnStartedAt)
 			if rem < 0 {
@@ -219,10 +219,10 @@ func (h *Handler) GetGameState(w http.ResponseWriter, r *http.Request) {
 			}
 			return rem
 		}(),
-		"units":            publicUnits,
-		"regions":          state.Regions,
-		"paths":            state.Paths,
-		"session":          state.Session,
+		"units":   publicUnits,
+		"regions": state.Regions,
+		"paths":   state.Paths,
+		"session": state.Session,
 	}
 
 	// Light Side gets ring bearer position via both top-level and lightView fields
