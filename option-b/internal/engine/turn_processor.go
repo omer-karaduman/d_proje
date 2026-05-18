@@ -25,17 +25,17 @@ type GameOverPublisher interface {
 
 // TurnProcessor manages turn-by-turn game state processing
 type TurnProcessor struct {
-	cache            *CacheManager
-	engineCh         <-chan ValidatedOrder
-	producerCh       chan<- GameEvent
-	graph            *game.Graph
-	session          *game.GameSession
-	ringBearer       *game.RingBearerState
-	unitConfigs      map[string]game.UnitConfig
-	ordersThisTurn   map[string]game.Order
-	pipeline2        *Pipeline2
-	mu               sync.Mutex
-	gameOver         bool              // set true after win condition fires; stops processing
+	cache             *CacheManager
+	engineCh          <-chan ValidatedOrder
+	producerCh        chan<- GameEvent
+	graph             *game.Graph
+	session           *game.GameSession
+	ringBearer        *game.RingBearerState
+	unitConfigs       map[string]game.UnitConfig
+	ordersThisTurn    map[string]game.Order
+	pipeline2         *Pipeline2
+	mu                sync.Mutex
+	gameOver          bool              // set true after win condition fires; stops processing
 	gameOverPublisher GameOverPublisher // K6: transactional GameOver producer (may be nil in tests)
 }
 
@@ -145,9 +145,11 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 func (tp *TurnProcessor) processStartGame() {
 	state := tp.cache.GetSnapshot()
 	state.Session.Phase = game.InProgress
+	state.Session.MaxTurns = tp.session.MaxTurns         // ← EKLE
+	state.Session.TurnDuration = tp.session.TurnDuration // ← EKLE
+	state.Session.HiddenUntil = tp.session.HiddenUntil   // ← EKLE
 	state.TurnStartedAt = time.Now().Unix()
 	tp.cache.Update(state)
-
 	tp.emitWorldStateSnapshot(state)
 	log.Printf("[StartGame] broadcasted WorldStateSnapshot turnStartedAt=%d", state.TurnStartedAt)
 }
@@ -360,8 +362,8 @@ func (tp *TurnProcessor) stepBlockAndSearch(state game.WorldStateCache, orders m
 			tp.emit("game.events.path", map[string]interface{}{
 				"event":     "PathStatusChanged",
 				"pathId":    pathID,
-				"status":    game.Blocked,    // for WorldStateCache merge
-				"newStatus": game.Blocked,    // for UI map color (Section 7 display)
+				"status":    game.Blocked, // for WorldStateCache merge
+				"newStatus": game.Blocked, // for UI map color (Section 7 display)
 			})
 
 		case game.SearchPathOrder:
@@ -1067,8 +1069,8 @@ func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 	type publicUnit struct {
 		game.UnitSnapshot
 		Class  game.UnitClass `json:"class"`
-		Side   game.Side     `json:"side"`
-		IsMaia bool          `json:"isMaia"`
+		Side   game.Side      `json:"side"`
+		IsMaia bool           `json:"isMaia"`
 	}
 	publicUnitsWithClass := make(map[string]publicUnit, len(state.Units))
 	for id, u := range state.Units {

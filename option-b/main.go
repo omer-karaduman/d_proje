@@ -56,6 +56,19 @@ func main() {
 		HiddenUntil:  hiddenUntilTurn,
 	}
 
+	// Config parse hatası (Windows \r\n) için güvenlik katmanı
+	if session.MaxTurns <= 0 {
+		log.Printf("WARNING: MaxTurns=%d (config parse hatası), 30'a sabitlendi", session.MaxTurns)
+		session.MaxTurns = 30
+	}
+	if session.TurnDuration <= 0 {
+		log.Printf("WARNING: TurnDuration=%v (config parse hatası), 60s'e sabitlendi", session.TurnDuration)
+		session.TurnDuration = 60
+	}
+	if session.HiddenUntil <= 0 {
+		session.HiddenUntil = 3
+	}
+
 	initialCache := game.WorldStateCache{
 		Turn:          1,
 		TurnStartedAt: time.Now().Unix(),
@@ -99,16 +112,16 @@ func main() {
 
 	// Start Engine Components
 	cacheManager := engine.NewCacheManager(initialCache)
-	
+
 	// Create channels
 	producerCh := make(chan engine.GameEvent, 200)
 	kafkaOrderCh := make(chan []byte, 100) // from HTTP to raw
-	
+
 	eventRouter := engine.NewEventRouter()
-	
+
 	done := make(chan struct{})
 	var wg sync.WaitGroup
-	
+
 	wg.Add(1)
 	go eventRouter.Run(&wg, done)
 
@@ -144,7 +157,6 @@ func main() {
 	wg.Add(2)
 	go p1.Start(&wg, done)
 	go p2.Start(&wg, done)
-
 
 	// Real Kafka Producer
 	producer, err := kafka.NewProducer(avroHelper)
@@ -194,7 +206,7 @@ func main() {
 							key, _ = m["unitId"].(string)
 						}
 					}
-						if err := producer.Produce(event.Topic, key, event.Payload, subject); err != nil {
+					if err := producer.Produce(event.Topic, key, event.Payload, subject); err != nil {
 						log.Printf("Producer error on %s: %v", event.Topic, err)
 					}
 
@@ -243,7 +255,6 @@ func main() {
 	}
 	orderProcessor := kafka.NewOrderProcessor(validator, producer, onValidated)
 
-	
 	// Real Kafka Consumer for order processing.
 	// ISSUE-1 FIX: All instances run the order consumer inside the same consumer group.
 	// Kafka distributes partitions across the 3 instances. The instance that receives
