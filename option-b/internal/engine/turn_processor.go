@@ -13,19 +13,30 @@ import (
 // Reads from engineCh (validated orders), produces events to eventProducerCh.
 // All game logic is config-driven — no unit ID literals.
 
+// GameOverPublisher is the minimal interface used by TurnProcessor to publish the
+// GameOver event with full Kafka transaction guarantees (K6 rule).
+// The real kafka.Producer satisfies this interface. Using an interface avoids a
+// circular import (engine → kafka → engine).
+type GameOverPublisher interface {
+	// PublishGameOverTx writes the GameOver payload to game.broadcast inside a
+	// single Kafka transaction, guaranteeing exactly-once delivery.
+	PublishGameOverTx(payload map[string]interface{}) error
+}
+
 // TurnProcessor manages turn-by-turn game state processing
 type TurnProcessor struct {
-	cache          *CacheManager
-	engineCh       <-chan ValidatedOrder
-	producerCh     chan<- GameEvent
-	graph          *game.Graph
-	session        *game.GameSession
-	ringBearer     *game.RingBearerState
-	unitConfigs    map[string]game.UnitConfig
-	ordersThisTurn map[string]game.Order
-	pipeline2      *Pipeline2
-	mu             sync.Mutex
-	gameOver       bool // set true after win condition fires; stops processing
+	cache            *CacheManager
+	engineCh         <-chan ValidatedOrder
+	producerCh       chan<- GameEvent
+	graph            *game.Graph
+	session          *game.GameSession
+	ringBearer       *game.RingBearerState
+	unitConfigs      map[string]game.UnitConfig
+	ordersThisTurn   map[string]game.Order
+	pipeline2        *Pipeline2
+	mu               sync.Mutex
+	gameOver         bool              // set true after win condition fires; stops processing
+	gameOverPublisher GameOverPublisher // K6: transactional GameOver producer (may be nil in tests)
 }
 
 // ValidatedOrder represents an order that passed Topology 1 validation
@@ -51,8 +62,6 @@ func NewTurnProcessor(
 	p2 *Pipeline2,
 ) *TurnProcessor {
 	// BUG-01 fix: seed TrueRegion from config so detection/win conditions work from Turn 1.
-	// Without this, if the Ring Bearer never moves, tp.ringBearer.TrueRegion stays ""
-	// and detection/win-condition checks against state.Regions[""] always fail.
 	rbStartRegion := ""
 	for _, cfg := range unitConfigs {
 		if cfg.Class == game.RingBearer {
@@ -71,6 +80,12 @@ func NewTurnProcessor(
 		ordersThisTurn: make(map[string]game.Order),
 		pipeline2:      p2,
 	}
+}
+
+// SetGameOverPublisher injects the transactional Kafka producer for GameOver events
+// (K6 rule). Must be called before Run(). Safe to skip in tests (nil = channel fallback).
+func (tp *TurnProcessor) SetGameOverPublisher(pub GameOverPublisher) {
+	tp.gameOverPublisher = pub
 }
 
 // Run starts the turn processor goroutine
@@ -563,14 +578,42 @@ func (tp *TurnProcessor) stepAutoAdvance(state game.WorldStateCache, turn int) g
 
 		cfg := tp.unitConfigs[unitID]
 
-		// Check if path is blocked
+		// Check if path is blocked.
+		// ISSUE-2 FIX (Phantom Block): A Nazgul may have moved in Step 4 (DEPLOY_NAZGUL)
+		// AFTER placing the block in Step 3. If so, the block is now a phantom —
+		// the blocker is no longer at the endpoint. Dynamically verify before enforcing.
 		if path.Status == game.Blocked {
-			tp.emit("game.events.unit", map[string]interface{}{
-				"event":  "RouteBlocked",
-				"unitId": unitID,
-				"pathId": pathID,
-			})
-			continue
+			blockerID := path.BlockedBy
+			blockerStillPresent := false
+			if blockerID != "" {
+				if blocker, ok := state.Units[blockerID]; ok {
+					// Blocker must still be ACTIVE and at one of the path's endpoints
+					if blocker.Status == game.Active &&
+						(blocker.Region == path.From || blocker.Region == path.To) {
+						blockerStillPresent = true
+					}
+				}
+			} else {
+				// BlockedBy not recorded (legacy state) — conservatively enforce the block
+				blockerStillPresent = true
+			}
+
+			if !blockerStillPresent {
+				// Phantom block: blocker has left. Auto-clear the block.
+				log.Printf("TurnProcessor: phantom block cleared on path %s (blocker %q no longer at endpoint)",
+					pathID, blockerID)
+				path.Status = game.Open
+				path.BlockedBy = ""
+				state.Paths[pathID] = path
+				// fall through — unit will now advance over the (now-open) path
+			} else {
+				tp.emit("game.events.unit", map[string]interface{}{
+					"event":  "RouteBlocked",
+					"unitId": unitID,
+					"pathId": pathID,
+				})
+				continue
+			}
 		}
 
 		// Determine source region.
@@ -1056,14 +1099,34 @@ func (tp *TurnProcessor) emitWorldStateSnapshot(state game.WorldStateCache) {
 	})
 }
 
-// emitGameOver emits GameOver with exactly-once semantics.
-// Uses a BLOCKING send — GameOver must NEVER be silently dropped (K6 requirement).
+// emitGameOver emits GameOver with exactly-once transactional semantics (K6 rule).
+//
+// ISSUE-3 FIX: If a GameOverPublisher was injected (real Kafka producer), we call
+// PublishGameOverTx which wraps the message in a full Kafka transaction. This
+// survives mid-turn crashes: if the node dies after BeginTransaction but before
+// CommitTransaction, the broker will abort the transaction and the next instance
+// (after InitTransactions fences the zombie epoch) can retry cleanly.
+//
+// Fallback: if no publisher is set (unit tests, local dev without Kafka), we fall
+// back to the existing blocking channel send.
 func (tp *TurnProcessor) emitGameOver(result map[string]interface{}, turn int) {
 	result["event"] = "GameOver"
-	// Blocking send: block until the producer goroutine picks this up.
-	// This guarantees delivery even under backpressure — never use select/default here.
+
+	if tp.gameOverPublisher != nil {
+		// K6 path: transactional publish
+		if err := tp.gameOverPublisher.PublishGameOverTx(result); err != nil {
+			// Transaction failed — log and fall back to channel so the UI still sees GameOver
+			log.Printf("TurnProcessor: transactional GameOver FAILED (%v); falling back to channel", err)
+			tp.producerCh <- GameEvent{Topic: "game.broadcast", Payload: result}
+		} else {
+			log.Printf("TurnProcessor: GameOver committed transactionally — turn=%d result=%v", turn, result)
+		}
+		return
+	}
+
+	// Fallback: blocking channel send (no-Kafka / test path)
 	tp.producerCh <- GameEvent{Topic: "game.broadcast", Payload: result}
-	log.Printf("TurnProcessor: GameOver sent (blocking) — %v", result)
+	log.Printf("TurnProcessor: GameOver sent via channel (no txn publisher) — %v", result)
 }
 
 // extractPathIDs extracts path IDs from order payload

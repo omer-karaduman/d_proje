@@ -38,29 +38,40 @@ function unitIcon(uid) {
 }
 
 // ── Region canvas positions ───────────────────────────────────────────
+// Coordinates are in LOGICAL pixels on a 900×600 reference canvas.
+// Minimum guaranteed gap between any two circle edges (r=16): ≥20px.
 const REGION_POS = {
-  'the-shire': { x: 80, y: 100 },
-  'bree': { x: 200, y: 100 },
-  'tharbad': { x: 160, y: 210 },
-  'weathertop': { x: 290, y: 80 },
-  'rivendell': { x: 370, y: 70 },
-  'fangorn': { x: 240, y: 310 },
-  'fords-of-isen': { x: 200, y: 280 },
-  'rohan-plains': { x: 310, y: 310 },
-  'moria': { x: 410, y: 190 },
-  'helms-deep': { x: 250, y: 370 },
-  'isengard': { x: 220, y: 370 },
-  'edoras': { x: 330, y: 390 },
-  'lothlorien': { x: 450, y: 240 },
-  'dead-marshes': { x: 530, y: 310 },
-  'emyn-muil': { x: 510, y: 250 },
-  'minas-tirith': { x: 440, y: 430 },
-  'ithilien': { x: 570, y: 390 },
-  'osgiliath': { x: 510, y: 430 },
-  'minas-morgul': { x: 590, y: 450 },
-  'cirith-ungol': { x: 660, y: 410 },
-  'mordor': { x: 700, y: 490 },
-  'mount-doom': { x: 780, y: 520 },
+  // North-West (Shire → Rivendell)
+  'the-shire':     { x:  72, y:  88 },
+  'bree':          { x: 196, y:  80 },
+  'tharbad':       { x: 150, y: 200 },
+  'weathertop':    { x: 288, y:  68 },
+  'rivendell':     { x: 378, y:  56 },
+
+  // West (Rohan / Isengard cluster)
+  'fords-of-isen': { x: 188, y: 270 },
+  'fangorn':       { x: 250, y: 320 },
+  'rohan-plains':  { x: 318, y: 302 },
+  'isengard':      { x: 196, y: 374 },   // was 220,370 — moved left to clear helms-deep
+  'helms-deep':    { x: 252, y: 390 },   // was 250,370 — pushed down
+  'edoras':        { x: 334, y: 408 },
+
+  // Centre column (Moria → Lothlorien → Emyn Muil)
+  'moria':         { x: 418, y: 186 },
+  'lothlorien':    { x: 472, y: 258 },   // was 450,240 → right+down (+22,+18)
+  'emyn-muil':     { x: 536, y: 206 },   // was 510,250 → right+up (+26,-44)
+  'dead-marshes':  { x: 574, y: 288 },   // was 530,310 → right+up (+44,-22)
+
+  // South / Gondor cluster — most overlap was here
+  'minas-tirith':  { x: 434, y: 452 },
+  'ithilien':      { x: 544, y: 370 },   // was 570,390 → left+up (-26,-20)
+  'osgiliath':     { x: 492, y: 462 },   // was 510,430 → left+down (-18,+32)
+  'minas-morgul':  { x: 598, y: 474 },   // was 590,450 → right+down (+8,+24)
+  'cirith-ungol':  { x: 664, y: 420 },
+
+  // Mordor / Mount Doom
+  'mordor':        { x: 708, y: 512 },
+  'mount-doom':    { x: 804, y: 544 },
 };
 
 // ── Paths ─────────────────────────────────────────────────────────────
@@ -140,8 +151,8 @@ const state = {
   side: null, playerId: null,
   connected: false, gamePhase: 'LOBBY',
   turn: 1, timerInterval: null,
-  turnStartedAt: null,   // Unix epoch (server'dan) — clock-based timer için
-  turnDuration: TURN_SECONDS, // saniye
+  turnStartedAt: null,
+  turnDuration: TURN_SECONDS,
   units: {}, regions: {}, paths: {},
   selectedUnit: null, selectedUnitData: null,
   selectedOrder: null, selectedRoute: [],
@@ -150,6 +161,12 @@ const state = {
   ringBearerRegion: null, lastDetectedRegion: null,
   hoveredRegion: null, highlightedPaths: [],
   analysisData: null, eventSource: null,
+  // BUG-1 FIX: dedup set prevents printing the same log entry twice in the same turn.
+  // Key = "turn:message". Cleared when turn advances or on GameReset.
+  _logDedup: new Set(),
+  // ISSUE-4 FIX: cleared only once per page session so the log isn't wiped on every
+  // WorldStateSnapshot (only on the very first Turn-1 snapshot after connecting).
+  _initialSnapshotSeen: false,
 };
 
 // ── DOM helper ────────────────────────────────────────────────────────
@@ -157,6 +174,9 @@ const $ = id => document.getElementById(id);
 
 // ── Canvas refs (set on DOMContentLoaded) ─────────────────────────────
 let canvas, ctx;
+// Logical (CSS pixel) canvas dimensions — set by resizeCanvas(), read by drawMap().
+// DPR-independent so coordinate math is always consistent.
+let _logicalW = 900, _logicalH = 620;
 
 // ── SSE Connection ────────────────────────────────────────────────────
 function connectSSE() {
@@ -193,6 +213,17 @@ function handleServerEvent(msg) {
 
     // ── Tur sonu dünya durumu ─────────────────────────────────────────
     case 'WorldStateSnapshot': {
+      // ISSUE-4 FIX: On the very first snapshot after connecting (Turn 1), clear the
+      // event log container so that history replayed from SSE on reconnect / second-tab
+      // open does NOT duplicate entries that the previous session already showed.
+      // We only clear once per page session (flag flips permanently after first snapshot).
+      if (!state._initialSnapshotSeen) {
+        state._initialSnapshotSeen = true;
+        const log = $('event-log');
+        if (log) log.innerHTML = '';
+        state._logDedup.clear();
+      }
+
       // Hareket eden birimleri tespit et (snapshot geldiğinde)
       Object.entries(msg.units || {}).forEach(([uid, newU]) => {
         const oldU = state.units[uid];
@@ -224,6 +255,9 @@ function handleServerEvent(msg) {
       });
 
       const prevTurn = state.turn;
+      // BUG-1 FIX: clear dedup set when turn advances so old keys don't pile up
+      if ((msg.turn || 0) !== state.turn) state._logDedup.clear();
+
       state.turn = msg.turn || state.turn;
       state.units = msg.units || state.units;
       state.regions = msg.regions || state.regions;
@@ -237,7 +271,6 @@ function handleServerEvent(msg) {
         if (rbElem) rbElem.textContent = REGION_META[msg.ringBearerRegion]?.name || msg.ringBearerRegion;
       }
 
-      // ── Timer senkronizasyonu — server'ın turnStartedAt'ından gerçek zamanlı hesapla
       {
         const turnDur = msg.turnDurationSec || TURN_SECONDS;
         if (msg.turnStartedAt) {
@@ -247,7 +280,6 @@ function handleServerEvent(msg) {
           state.turnStartedAt = Math.floor(Date.now() / 1000) - (turnDur - Math.max(1, msg.turnRemainingSec));
           state.turnDuration = turnDur;
         } else {
-          // Fallback: Sunucu zamanı göndermediyse local başlat
           state.turnStartedAt = Math.floor(Date.now() / 1000);
           state.turnDuration = turnDur;
         }
@@ -492,9 +524,21 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function resizeCanvas() {
-  const wrapper = canvas.parentElement;
-  canvas.width = wrapper.clientWidth || 900;
-  canvas.height = wrapper.clientHeight || 600;
+  const dpr = window.devicePixelRatio || 1;
+  // Read the actual rendered CSS size (getBoundingClientRect is reliable even
+  // before explicit layout; falls back to HTML attribute values).
+  const rect = canvas.getBoundingClientRect();
+  const cssW = rect.width  || parseInt(canvas.getAttribute('width'))  || 900;
+  const cssH = rect.height || parseInt(canvas.getAttribute('height')) || 620;
+
+  _logicalW = cssW;
+  _logicalH = cssH;
+
+  // Physical draw-buffer = logical × DPR (Retina-sharp).
+  // Do NOT set canvas.style.width/height — let CSS width:100%/height:100% handle display size.
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 function runLoadingScreen() {
@@ -715,307 +759,428 @@ function closeOrderPanel() {
 // PARÇA 3 — Canvas Render, Unit Panel, Map Events
 // ══════════════════════════════════════════════════════════════════════
 
+// ── Map centering math ─────────────────────────────────────────────────────────────────────
+// Returns {offsetX, offsetY, scaleX, scaleY} so the map is perfectly centred
+// within the logical canvas area (_logicalW × _logicalH).
+// All drawMap + mouse handlers share this single source of truth.
+function getMapTransform() {
+  const positions = Object.values(REGION_POS);
+  const minX = Math.min(...positions.map(p => p.x));  // 72
+  const maxX = Math.max(...positions.map(p => p.x));  // 804
+  const minY = Math.min(...positions.map(p => p.y));  // 56
+  const maxY = Math.max(...positions.map(p => p.y));  // 544
+
+  const W = _logicalW, H = _logicalH;
+  const PADDING = 54; // px breathing room on each side for labels
+
+  // Scale that fits the map bounding box inside the canvas with padding
+  const scaleX = (W - PADDING * 2) / (maxX - minX);
+  const scaleY = (H - PADDING * 2) / (maxY - minY);
+  const scale  = Math.min(scaleX, scaleY); // uniform scale keeps aspect ratio
+
+  // Translate so the scaled map bounding box is centred
+  const mapW = (maxX - minX) * scale;
+  const mapH = (maxY - minY) * scale;
+  const offsetX = (W - mapW) / 2 - minX * scale;
+  const offsetY = (H - mapH) / 2 - minY * scale;
+
+  return { offsetX, offsetY, scale };
+}
+
 function drawMap() {
   if (!ctx) return;
-  const W = canvas.width, H = canvas.height;
-  const scaleX = W / 900, scaleY = H / 600;
-  const now = Date.now();
+  const dpr  = window.devicePixelRatio || 1;
+  // Derive logical dims from the physical buffer (always current, DPR-independent).
+  const W    = canvas.width  / dpr;
+  const H    = canvas.height / dpr;
+  const now  = Date.now();
 
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#06060e';
+  // 1. Clear entire physical buffer
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 2. Full-canvas vignette background (DPR scale, no map offset)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const _bgG = ctx.createRadialGradient(W*.5,H*.44,0, W*.5,H*.44, Math.max(W,H)*.72);
+  _bgG.addColorStop(0,'#0f0f20'); _bgG.addColorStop(1,'#030308');
+  ctx.fillStyle = _bgG;
   ctx.fillRect(0, 0, W, H);
 
-  // ── 0. Nazgul Tespit Alanı (Sauron Pasif Kontrolü) ──
+  // 3. Compute bounding box of all REGION_POS and centering offset
+  const _pos = Object.values(REGION_POS);
+  const minX = Math.min(..._pos.map(p=>p.x));
+  const maxX = Math.max(..._pos.map(p=>p.x));
+  const minY = Math.min(..._pos.map(p=>p.y));
+  const maxY = Math.max(..._pos.map(p=>p.y));
+  const PAD  = 56; // breathing room for labels on all sides
+  const scale = Math.min((W - PAD*2)/(maxX-minX), (H - PAD*2)/(maxY-minY));
+  const offsetX = (W - (maxX-minX)*scale)/2 - minX*scale;
+  const offsetY = (H - (maxY-minY)*scale)/2 - minY*scale;
+
+  // 4. Single setTransform that combines DPR + centering translation.
+  //    All subsequent draws just use  pos.x * scale, pos.y * scale.
+  ctx.setTransform(dpr, 0, 0, dpr, offsetX*dpr, offsetY*dpr);
+  const scaleX = scale, scaleY = scale, s = scale;
+
+  // ── 0b. Helpers ──────────────────────────────────────────────────────────────
+  // Rounded-rect path (browser-safe)
+  const _rr = (x, y, w, h, r) => {
+    const ri = Math.min(r ?? 3, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+ri, y);
+    ctx.lineTo(x+w-ri, y);  ctx.arc(x+w-ri, y+ri,    ri, -Math.PI/2, 0);
+    ctx.lineTo(x+w, y+h-ri); ctx.arc(x+w-ri, y+h-ri, ri,  0, Math.PI/2);
+    ctx.lineTo(x+ri, y+h);   ctx.arc(x+ri,   y+h-ri, ri,  Math.PI/2, Math.PI);
+    ctx.lineTo(x, y+ri);     ctx.arc(x+ri,   y+ri,   ri,  Math.PI, -Math.PI/2);
+    ctx.closePath();
+  };
+
+  // Outstroked text — crisp on any background
+  const _txt = (text, x, y, fillCol, size, bold = false, strokeWidth = 2.5) => {
+    ctx.font = `${bold ? 'bold ' : ''}${size}px Inter, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = fillCol;
+    ctx.fillText(text, x, y);
+  };
+
+  // Draw a single premium unit token
+  const drawUnitToken = (uid, u, ux, uy, isSelected, hasPending) => {
+    const disp     = UNIT_DISPLAY[uid] || { icon: '🔹', name: uid };
+    const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
+    const side     = (u.side || '').toUpperCase();
+    const isShadow = side === 'SHADOW' || (side === '' && shadowIds.includes(uid));
+    const R        = Math.round(14 * s); // token radius — increased from 11 for visibility
+
+    // Selected: pulsing gold outer ring
+    if (isSelected) {
+      const gp = 0.5 + 0.5 * Math.sin(now / 350);
+      ctx.beginPath();
+      ctx.arc(ux, uy, R + 5, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(201,168,76,${gp})`;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Drop shadow under token
+    ctx.beginPath();
+    ctx.arc(ux, uy + 2, R, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fill();
+
+    // Token background — radial gradient for a polished 3-D pill look
+    const tg = ctx.createRadialGradient(ux - R*.3, uy - R*.3, 0, ux, uy, R);
+    if (isShadow) {
+      tg.addColorStop(0, '#3a0a0a');
+      tg.addColorStop(1, '#160404');
+    } else {
+      tg.addColorStop(0, '#0a1a3a');
+      tg.addColorStop(1, '#040c1c');
+    }
+    ctx.beginPath();
+    ctx.arc(ux, uy, R, 0, Math.PI*2);
+    ctx.fillStyle = tg;
+    ctx.fill();
+
+    // Crisp 2px side-coloured border
+    const borderCol = isShadow
+      ? (hasPending ? '#ffaa44' : '#cc2200')
+      : (hasPending ? '#ffdd55' : '#3a8eff');
+    ctx.beginPath();
+    ctx.arc(ux, uy, R, 0, Math.PI*2);
+    ctx.strokeStyle = borderCol;
+    ctx.lineWidth = hasPending ? 2.5 : 2;
+    ctx.stroke();
+
+    // Emoji — pixel-perfect centred
+    const iconPx = Math.round(12 * s);
+    ctx.font = `${iconPx}px Inter, sans-serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(disp.icon, ux, uy);
+    ctx.textBaseline = 'alphabetic';
+
+    // Unit short-name label (first word) with outstroked text
+    const label  = (disp.name || uid).split(/[\s,]/)[0];
+    const lPx    = Math.round(6 * s);
+    const ly     = uy + R + 9;
+    _txt(label, ux, ly, isShadow ? '#ffcccc' : '#cce4ff', lPx);
+
+    // Pending gold dot (top-right)
+    if (hasPending) {
+      ctx.beginPath();
+      ctx.arc(ux + R - 2, uy - R + 2, 3.5, 0, Math.PI*2);
+      ctx.fillStyle = '#c9a84c';
+      ctx.fill();
+    }
+  };
+
+  // ── 0c. Sauron-in-Mordor detection (needed for section 6) ───────────────────
   const sauronInMordor = (() => {
     const s = Object.values(state.units).find(u => {
-      const side = (u.side || '').toUpperCase();
-      const isShadow = side === 'SHADOW' || u.class === 'Maia' && u.id === 'sauron';
-      return isShadow && u.region === 'mordor' && (u.status || 'ACTIVE') === 'ACTIVE' && u.id === 'sauron';
+      const id = Object.entries(state.units).find(([,v]) => v === u)?.[0] || '';
+      const isSauron = (u.side||'').toUpperCase() === 'SHADOW' &&
+                       (u.class === 'MAIA' || id === 'sauron');
+      return isSauron && u.region === 'mordor' && (u.status||'ACTIVE').toUpperCase() === 'ACTIVE';
     });
     return !!s;
   })();
 
-  Object.entries(state.units).forEach(([uid, u]) => {
-    if (u.class !== 'Nazgul') return;
-    if (!u.region || (u.status && u.status !== 'ACTIVE')) return;
-    const pos = REGION_POS[u.region];
-    if (!pos) return;
-
-    const baseRange = u.detectionRange || 1;
-    const effectiveRange = baseRange + (sauronInMordor ? 1 : 0);
-    const sx = pos.x * scaleX, sy = pos.y * scaleY;
-
-    const pulse = 0.7 + 0.3 * Math.sin(now / 800);
-    ctx.beginPath();
-    ctx.arc(sx, sy, 26, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(180, 30, 30, ${0.5 * pulse})`;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 3]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    if (effectiveRange >= 2) {
-      ctx.beginPath();
-      ctx.arc(sx, sy, 52, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(180, 30, 30, ${0.25 * pulse})`;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([6, 4]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    ctx.font = `bold ${Math.round(9 * scaleX)}px Inter, sans-serif`;
-    ctx.fillStyle = 'rgba(220, 80, 80, 0.9)';
-    ctx.textAlign = 'center';
-    ctx.fillText(`👁️  ${effectiveRange}`, sx, sy - 28);
+  // ── 0d. Nazgul detection aura ───────────────────────────────────────────────
+  const nazgulUnits = Object.entries(state.units).filter(([uid, u]) => {
+    const cfg = (state.unitConfigs || {})[uid] || {};
+    return (cfg.detectionRange || 0) > 0 && (u.status||'ACTIVE').toUpperCase() === 'ACTIVE' && u.region;
   });
+  if (state.side === 'FREE_PEOPLES') {
+    nazgulUnits.forEach(([uid, u]) => {
+      const pos = REGION_POS[u.region]; if (!pos) return;
+      const cfg = (state.unitConfigs||{})[uid]||{};
+      const effectiveRange = (cfg.detectionRange||2) * 1.5;
+      const sx = pos.x * scaleX, sy = pos.y * scaleY;
+      const auraR = effectiveRange * 55 * s;
+      const ag = ctx.createRadialGradient(sx, sy, 0, sx, sy, auraR);
+      ag.addColorStop(0, 'rgba(180,0,0,0.12)');
+      ag.addColorStop(1, 'rgba(180,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(sx, sy, auraR, 0, Math.PI*2);
+      ctx.fillStyle = ag;
+      ctx.fill();
+      ctx.font = `${Math.round(11*s)}px Inter, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('👁️', sx, sy - 28*s);
+      ctx.textBaseline = 'alphabetic';
+    });
+  }
 
-  // ── 1. Yollar ──────────────────────────────────────────────────────────
+  // ── 1. Paths ─────────────────────────────────────────────────────────────────
   PATHS.forEach(p => {
     const a = REGION_POS[p.from], b = REGION_POS[p.to];
     if (!a || !b) return;
-    const pd = state.paths[p.id] || {};
-    const highlighted = state.highlightedPaths?.includes(p.id);
-    const ax = a.x * scaleX, ay = a.y * scaleY;
-    const bx = b.x * scaleX, by = b.y * scaleY;
+    const pd   = state.paths[p.id] || {};
+    const high = state.highlightedPaths?.includes(p.id);
+    const ax = a.x*scaleX, ay = a.y*scaleY;
+    const bx = b.x*scaleX, by = b.y*scaleY;
+    const mx = (ax+bx)/2, my = (ay+by)/2;
 
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
+    let col, lw, dash, glowCol, glowR;
+    if (high)                           { col='#e8cc7a'; lw=3.5; dash=[];      glowCol='#c9a84c'; glowR=12; }
+    else if (pd.status==='BLOCKED')     { const p0=.6+.4*Math.sin(now/600);
+                                          col=`rgba(220,30,30,${p0})`; lw=3.5; dash=[6,4]; glowCol='#8b0000'; glowR=16; }
+    else if (pd.status==='TEMPORARILY_OPEN') { col='#5ab4ff'; lw=2.5; dash=[8,3]; glowCol='#4a90d9'; glowR=14; }
+    else if (pd.status==='THREATENED')  { col='#d45500'; lw=2.2; dash=[5,3];  glowCol='#c04000'; glowR=6; }
+    else if ((pd.surveillanceLevel||0)>=3){ col='#9050d0'; lw=2;   dash=[4,2]; glowCol='#8040c0'; glowR=8; }
+    else if ((pd.surveillanceLevel||0)===2){ col='#b04070'; lw=1.8; dash=[4,3]; glowCol='none';   glowR=0; }
+    else if ((pd.surveillanceLevel||0)===1){ col='#703050'; lw=1.5; dash=[3,4]; glowCol='none';   glowR=0; }
+    else                                { col='#1e1e30'; lw=1.5; dash=[];      glowCol='none';   glowR=0; }
 
-    if (highlighted) {
-      ctx.strokeStyle = '#c9a84c';
-      ctx.lineWidth = 3.5;
-      ctx.setLineDash([]);
-      ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 8;
-    } else if (pd.status === 'BLOCKED') {
-      const blPulse = 0.6 + 0.4 * Math.sin(now / 600);
-      ctx.strokeStyle = `rgba(160, 0, 0, ${blPulse})`;
-      ctx.lineWidth = 4;
-      ctx.setLineDash([6, 4]);
-      ctx.shadowColor = '#8b0000'; ctx.shadowBlur = 10;
-    } else if (pd.status === 'TEMPORARILY_OPEN') {
-      ctx.strokeStyle = '#4a90d9';
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([8, 3]);
-      ctx.shadowColor = '#4a90d9'; ctx.shadowBlur = 12;
-    } else if (pd.status === 'THREATENED') {
-      ctx.strokeStyle = '#c04000';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 3]);
-      ctx.shadowColor = '#c04000'; ctx.shadowBlur = 5;
-    } else if (pd.surveillanceLevel >= 3) {
-      ctx.strokeStyle = '#8040c0';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 2]);
-      ctx.shadowColor = '#8040c0'; ctx.shadowBlur = 8;
-    } else if (pd.surveillanceLevel === 2) {
-      ctx.strokeStyle = '#a03060';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.shadowColor = 'none'; ctx.shadowBlur = 0;
-    } else if (pd.surveillanceLevel === 1) {
-      ctx.strokeStyle = '#603040';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 4]);
-      ctx.shadowBlur = 0;
-    } else {
-      ctx.strokeStyle = '#2a2a3a';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
-    }
+    // Layer 1: dark road base
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+    ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=lw+3; ctx.setLineDash([]); ctx.shadowBlur=0;
     ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.shadowBlur = 0;
 
-    if (pd.surveillanceLevel > 0 && pd.status !== 'BLOCKED') {
-      const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      ctx.font = `${Math.round(8 * scaleX)}px Inter, sans-serif`;
-      ctx.fillStyle = pd.surveillanceLevel >= 3 ? '#c080ff' : pd.surveillanceLevel === 2 ? '#ff80a0' : '#a06080';
-      ctx.textAlign = 'center';
-      ctx.fillText('🔴'.repeat(pd.surveillanceLevel), mx, my - 4);
-    }
+    // Layer 2: coloured status line
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by);
+    ctx.strokeStyle=col; ctx.lineWidth=lw; ctx.setLineDash(dash);
+    ctx.shadowColor=glowCol; ctx.shadowBlur=glowR;
+    ctx.stroke();
+    ctx.setLineDash([]); ctx.shadowBlur=0;
 
-    if (pd.status === 'BLOCKED') {
-      const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      ctx.font = `${Math.round(14 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('🚫', mx, my + 4);
+    // Midpoint icon
+    const iPx = Math.round(12*s);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    if (pd.status==='BLOCKED')          { ctx.font=`${iPx}px Inter,sans-serif`; ctx.fillText('🚫',mx,my); }
+    else if (pd.status==='TEMPORARILY_OPEN') { ctx.font=`${iPx}px Inter,sans-serif`; ctx.fillText('✨',mx,my); }
+    else if ((pd.surveillanceLevel||0)>0) {
+      const dotCol = (pd.surveillanceLevel||0)>=3 ? '#c080ff' : (pd.surveillanceLevel||0)===2 ? '#ff7090' : '#a04060';
+      const dots = '●'.repeat(pd.surveillanceLevel||0);
+      ctx.font=`${Math.round(7*s)}px Inter,sans-serif`;
+      const dw=ctx.measureText(dots).width;
+      _rr(mx-dw/2-3, my-6, dw+6, 10, 3);
+      ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fill();
+      ctx.fillStyle=dotCol; ctx.fillText(dots,mx,my);
     }
-
-    if (pd.status === 'TEMPORARILY_OPEN') {
-      const mx = (ax + bx) / 2, my = (ay + by) / 2;
-      ctx.font = `${Math.round(13 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('✨', mx, my + 4);
-    }
+    ctx.textBaseline='alphabetic';
   });
 
-  // ── 2. Bölgeler ────────────────────────────────────────────────────────
+  // ── 2. Region nodes — radial-gradient for depth/polish ──────────────────────
   for (const [id, pos] of Object.entries(REGION_POS)) {
-    const meta = REGION_META[id] || {};
-    const rd = state.regions[id] || {};
+    const meta    = REGION_META[id] || {};
+    const rd      = state.regions[id] || {};
     const hovered = state.hoveredRegion === id;
-    const sx = pos.x * scaleX, sy = pos.y * scaleY;
-    const radius = hovered ? 18 : 15;
+    const sx = pos.x*scaleX, sy = pos.y*scaleY;
+    const R  = hovered ? 19 : 16;
+    const usc = Math.min(scaleX, scaleY);
 
-    if (id === 'mount-doom') {
-      ctx.shadowColor = '#ff4400'; ctx.shadowBlur = hovered ? 25 : 15;
-    } else if (id === 'the-shire') {
-      ctx.shadowColor = '#4a90d9'; ctx.shadowBlur = hovered ? 15 : 8;
-    } else if (id === 'isengard' || id === 'minas-morgul' || id === 'mordor') {
-      ctx.shadowColor = '#8b0000'; ctx.shadowBlur = hovered ? 12 : 6;
-    } else if (rd.fortified) {
-      ctx.shadowColor = '#c9a84c'; ctx.shadowBlur = 8;
-    } else {
-      ctx.shadowBlur = 0;
-    }
+    // Drop shadow
+    ctx.beginPath(); ctx.arc(sx, sy+2, R+1, 0, Math.PI*2);
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-    ctx.fillStyle = TERRAIN_COLOR[meta.terrain] || '#1a1a2a';
-    ctx.fill();
+    // Landmark glow
+    ctx.shadowBlur = 0;
+    if      (id==='mount-doom')  { ctx.shadowColor='#ff4400'; ctx.shadowBlur=hovered?30:18; }
+    else if (id==='the-shire')   { ctx.shadowColor='#4a90d9'; ctx.shadowBlur=hovered?16:8; }
+    else if (id==='mordor'||id==='isengard'||id==='minas-morgul')
+                                 { ctx.shadowColor='#8b0000'; ctx.shadowBlur=hovered?14:7; }
+    else if (rd.fortified)       { ctx.shadowColor='#c9a84c'; ctx.shadowBlur=10; }
+    else if (hovered)            { ctx.shadowColor='rgba(201,168,76,0.7)'; ctx.shadowBlur=14; }
 
-    if (rd.controlledBy === 'SHADOW') ctx.strokeStyle = '#8b0000';
-    else if (rd.controlledBy === 'FREE_PEOPLES') ctx.strokeStyle = '#2d7a4a';
-    else ctx.strokeStyle = hovered ? '#c9a84c' : '#333';
-    ctx.lineWidth = hovered ? 3 : 1.5;
-    ctx.stroke();
+    // Terrain fill — RADIAL GRADIENT for depth (looks like a raised button/node)
+    const baseCol = TERRAIN_COLOR[meta.terrain] || '#1a1a2a';
+    const rg = ctx.createRadialGradient(sx-R*.35, sy-R*.35, 0, sx, sy, R);
+    rg.addColorStop(0, lightenColor(baseCol, 0.60));  // brighter highlight
+    rg.addColorStop(0.55, baseCol);
+    rg.addColorStop(1,   darkenColor(baseCol, 0.45));
+    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI*2);
+    ctx.fillStyle = rg; ctx.fill();
     ctx.shadowBlur = 0;
 
+    // Control ring
+    let ringCol;
+    if      (rd.controlledBy==='SHADOW')       ringCol='rgba(200,20,20,0.9)';
+    else if (rd.controlledBy==='FREE_PEOPLES') ringCol='rgba(45,140,74,0.9)';
+    else if (hovered)                          ringCol='rgba(201,168,76,0.95)';
+    else                                       ringCol='rgba(60,60,85,0.8)';
+    ctx.beginPath(); ctx.arc(sx, sy, R, 0, Math.PI*2);
+    ctx.strokeStyle=ringCol; ctx.lineWidth=hovered?3:2; ctx.stroke();
+
+    // Fortification dashed outer ring
     if (rd.fortified) {
-      ctx.beginPath();
-      ctx.arc(sx, sy, radius + 5, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(201,168,76,0.5)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 2]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.font = `${Math.round(10 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('🛡️', sx + radius - 2, sy - radius + 2);
+      ctx.beginPath(); ctx.arc(sx, sy, R+5, 0, Math.PI*2);
+      ctx.strokeStyle='rgba(201,168,76,0.6)'; ctx.lineWidth=2;
+      ctx.setLineDash([4,2]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font=`${Math.round(9*usc)}px Inter,sans-serif`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🛡️', sx+R-1, sy-R+1);
+      ctx.textBaseline='alphabetic';
     }
 
-    ctx.fillStyle = hovered ? '#e8e0cc' : '#7a7080';
-    ctx.font = `${hovered ? 'bold ' : ''}${Math.round(9 * scaleX)}px Inter, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.shadowBlur = 0;
-    ctx.fillText(meta.name || id, sx, sy + radius + 11);
+    // Region name — outstroked for legibility
+    const labelY = sy + R + 14;
+    const fPx    = Math.round(hovered ? 9.5*usc : 8.5*usc);
+    _txt(meta.name || id, sx, labelY, hovered ? '#e8e0cc' : '#b8b0cc', fPx, hovered);
 
+    // High-threat badge (≥4 only)
     const threat = rd.threatLevel ?? meta.threat ?? 0;
-    if (threat >= 2) {
-      ctx.font = `bold ${Math.round(8 * scaleX)}px Inter, sans-serif`;
-      ctx.fillStyle = threat >= 4 ? '#ff4444' : '#c04000';
-      ctx.fillText(`⚠️${threat}`, sx, sy - radius - 4);
+    if (threat >= 4) {
+      const tPx  = Math.round(8*usc);
+      const tTxt = `⚠ ${threat}`;
+      ctx.font   = `bold ${tPx}px Inter,sans-serif`;
+      const tW   = ctx.measureText(tTxt).width;
+      const tY   = sy - R - 6;
+      _rr(sx-tW/2-4, tY-tPx-1, tW+8, tPx+4, 3);
+      ctx.fillStyle='rgba(100,0,0,0.8)'; ctx.fill();
+      _txt(tTxt, sx, tY, '#ff5555', tPx, true, 1.5);
     }
   }
 
-  // ── 3. Birimler ────────────────────────────────────────────────────────
+  // ── 3. Unit tokens — anti-overlap trigonometric spread ──────────────────────
   const byRegion = {};
   Object.entries(state.units).forEach(([uid, u]) => {
-    // CRITICAL GUARD: skip units with empty region (e.g. Ring Bearer on Dark Side,
-    // or any RESPAWNING unit). Without this, byRegion[""] builds up and
-    // REGION_POS[""] → undefined → pos.x throws TypeError, crashing the entire
-    // render loop and preventing anything after it (including timer init) from running.
-    if (!u.region || u.region === '') return;
-    if (!byRegion[u.region]) byRegion[u.region] = [];
-    byRegion[u.region].push({ uid, u });
+    if (!u.region) return;
+    if ((u.status||'ACTIVE').toUpperCase() !== 'ACTIVE') return;
+    (byRegion[u.region] = byRegion[u.region] || []).push({ uid, u });
   });
 
   Object.entries(byRegion).forEach(([regionId, units]) => {
-    const pos = REGION_POS[regionId];
-    if (!pos) return;
-    const sx = pos.x * scaleX, sy = pos.y * scaleY;
+    const pos = REGION_POS[regionId]; if (!pos) return;
+    const cx = pos.x*scaleX, cy = pos.y*scaleY;
     const total = units.length;
+    // Cluster radius — must be > 2×tokenRadius (R≈14px) to prevent overlap.
+    // Using a fixed pixel value so it scales correctly with the canvas.
+    const tokenR = Math.round(14 * s);
+    const CR = total===1 ? 0 : total===2 ? tokenR*2+6 : total<=4 ? tokenR*2+8 : tokenR*2+14;
 
     units.forEach(({ uid, u }, i) => {
-      const disp = UNIT_DISPLAY[uid] || { icon: '🔹' };
-      const angle = total > 1 ? (i / total) * Math.PI * 2 - Math.PI / 2 : -Math.PI / 2;
-      const dist = total > 1 ? 20 : 0;
-      const ux = sx + Math.cos(angle) * dist;
-      const uy = sy + Math.sin(angle) * dist;
-
-      // DÜZELTME: Side alanını normalize et ve class/id fallback'lerini kullan
-      const uSide = (u.side || '').toUpperCase();
-      const shadowIds = ['witch-king','nazgul-2','nazgul-3','uruk-hai-legion','saruman','sauron'];
-      const isShadow = uSide === 'SHADOW' || (uSide === '' && shadowIds.includes(uid));
-
-      ctx.beginPath();
-      ctx.arc(ux, uy - 10, 8, 0, Math.PI * 2);
-      ctx.fillStyle = isShadow ? 'rgba(139,0,0,0.6)' : 'rgba(42,90,150,0.6)';
-      ctx.fill();
-      ctx.strokeStyle = isShadow ? '#c04000' : '#4a90d9';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      ctx.font = `${Math.round(11 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText(disp.icon, ux, uy - 6);
-
-      if (state.pendingOrders[uid]) {
-        ctx.font = `${Math.round(7 * scaleX)}px Inter, sans-serif`;
-        ctx.fillText('⏳', ux + 8, uy - 14);
-      }
+      const isSelected = state.selectedUnit === uid;
+      const hasPending = !!state.pendingOrders[uid];
+      // Evenly spaced arc; single unit stays centred
+      const angle = total===1 ? -Math.PI/2 : (i/total)*Math.PI*2 - Math.PI/2;
+      const ux = cx + Math.cos(angle)*CR;
+      const uy = cy + Math.sin(angle)*CR;
+      drawUnitToken(uid, u, ux, uy, isSelected, hasPending);
     });
+
+    // Count badge for 3+ unit clusters
+    if (total >= 3) {
+      const bx = cx + CR + 8, by = cy - CR - 4;
+      ctx.beginPath(); ctx.arc(bx, by, 8, 0, Math.PI*2);
+      ctx.fillStyle='#c9a84c'; ctx.fill();
+      ctx.font=`bold ${Math.round(8*s)}px Inter,sans-serif`;
+      ctx.fillStyle='#0a0a14'; ctx.textAlign='center';
+      ctx.textBaseline='middle'; ctx.fillText(String(total),bx,by);
+      ctx.textBaseline='alphabetic';
+    }
   });
 
-  // ── 4. Ring Bearer ─────────────────────────────────────────────────────
+  // ── 4. Ring Bearer — double pulsing ring (Light Side) ───────────────────────
   if (state.side !== 'SHADOW' && state.ringBearerRegion) {
     const pos = REGION_POS[state.ringBearerRegion];
     if (pos) {
-      const pulse = 0.6 + 0.4 * Math.sin(now / 700);
-      const sx = pos.x * scaleX, sy = pos.y * scaleY;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 22, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 235, 59, ${pulse})`;
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#ffeb3b'; ctx.shadowBlur = 16;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.font = `${Math.round(12 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('💍', sx, sy + 4);
+      const pulse = .55 + .45*Math.sin(now/700);
+      const sx = pos.x*scaleX, sy = pos.y*scaleY;
+      ctx.beginPath(); ctx.arc(sx,sy,25,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,235,59,${pulse})`; ctx.lineWidth=3;
+      ctx.shadowColor='#ffeb3b'; ctx.shadowBlur=20; ctx.stroke(); ctx.shadowBlur=0;
+      ctx.beginPath(); ctx.arc(sx,sy,16,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,235,59,${pulse*.45})`; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.font=`${Math.round(14*s)}px Inter,sans-serif`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('💍',sx,sy); ctx.textBaseline='alphabetic';
     }
   }
 
-  // ── 5. Son Tespit Konumu ───────────────────────────────────────────────
+  // ── 5. Last Detected Region — dashed hunt ring (Shadow) ─────────────────────
   if (state.side === 'SHADOW' && state.lastDetectedRegion) {
     const pos = REGION_POS[state.lastDetectedRegion];
     if (pos) {
-      const pulse = 0.5 + 0.5 * Math.abs(Math.sin(now / 500));
-      const sx = pos.x * scaleX, sy = pos.y * scaleY;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 24, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(255, 68, 0, ${pulse})`;
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([5, 4]);
-      ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 12;
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
-      ctx.font = `${Math.round(11 * scaleX)}px Inter, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('👁️', sx, sy + 4);
+      const pulse = .5+.5*Math.abs(Math.sin(now/500));
+      const sx = pos.x*scaleX, sy = pos.y*scaleY;
+      ctx.beginPath(); ctx.arc(sx,sy,27,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(255,68,0,${pulse})`; ctx.lineWidth=2.5;
+      ctx.setLineDash([5,4]); ctx.shadowColor='#ff4400'; ctx.shadowBlur=16;
+      ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur=0;
+      ctx.font=`${Math.round(13*s)}px Inter,sans-serif`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('👁️',sx,sy); ctx.textBaseline='alphabetic';
     }
   }
 
-  // ── 6. Sauron Pasif Etki ───────────────────────────────────────────────
+  // ── 6. Sauron Passive Aura ───────────────────────────────────────────────────
   if (sauronInMordor) {
     const pos = REGION_POS['mordor'];
     if (pos) {
-      const pulse = 0.4 + 0.3 * Math.sin(now / 1200);
-      const sx = pos.x * scaleX, sy = pos.y * scaleY;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 30, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(200, 0, 0, ${pulse})`;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 5]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
+      const pulse = .4+.3*Math.sin(now/1200);
+      const sx = pos.x*scaleX, sy = pos.y*scaleY;
+      ctx.beginPath(); ctx.arc(sx,sy,33,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(200,0,0,${pulse})`; ctx.lineWidth=1.5;
+      ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur=0;
     }
   }
+
+  // Reset transform — remove centering offset, keep DPR scale
+  const _dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(_dpr, 0, 0, _dpr, 0, 0);
+}
+
+// Colour helpers for radial gradient region nodes
+function lightenColor(hex, amount) {
+  const n = parseInt(hex.replace('#',''),16);
+  const r = Math.min(255, ((n>>16)&0xff) + Math.round(255*amount));
+  const g = Math.min(255, ((n>>8) &0xff) + Math.round(255*amount));
+  const b = Math.min(255, ( n     &0xff) + Math.round(255*amount));
+  return `rgb(${r},${g},${b})`;
+}
+function darkenColor(hex, amount) {
+  const n = parseInt(hex.replace('#',''),16);
+  const r = Math.max(0, ((n>>16)&0xff) - Math.round(255*amount));
+  const g = Math.max(0, ((n>>8) &0xff) - Math.round(255*amount));
+  const b = Math.max(0, ( n     &0xff) - Math.round(255*amount));
+  return `rgb(${r},${g},${b})`;
 }
 
 let _mapAnimHandle = null;
@@ -1066,11 +1231,19 @@ function renderUnits() {
     card.className = [
       'unit-card',
       isShadow ? 'unit-card--shadow' : 'unit-card--light',
-      !isActive ? 'unit-' + st.toLowerCase() : '',
+      // Disabled state: CSS class handles pointer-events, opacity, grayscale.
+      // Do NOT also set inline styles — they interfere with !important rules.
+      !isActive ? 'unit-card--disabled' : '',
+      // Respawning gets an extra amber-tint variant so it looks distinct from Destroyed.
+      st === 'RESPAWNING' ? 'unit-card--respawning' : '',
       pending ? 'unit-pending' : '',
     ].filter(Boolean).join(' ');
     card.dataset.uid = uid;
-    card.style.cursor = isActive ? 'pointer' : 'not-allowed';
+    if (!isActive) {
+      // Accessibility: mark as disabled and remove from tab order entirely.
+      card.setAttribute('aria-disabled', 'true');
+      card.setAttribute('tabindex', '-1');
+    }
 
     card.innerHTML = `
       <div class="uc-header">
@@ -1090,9 +1263,13 @@ function renderUnits() {
         <span class="strength-text">${curStr}/${maxStr}</span>
       </div>
       ${disp.trait ? `<div class="uc-trait">${disp.trait}</div>` : ''}
+      ${!isActive ? `<div class="uc-disabled-label">${st === 'RESPAWNING' ? `🔄 Yeniden doğuyor...` : `☠️ Yok edildi`}</div>` : ''}
       ${pending ? `<div class="uc-pending-label">⏳ ${pending.replace(/_/g, ' ')}</div>` : ''}
     `;
-    card.addEventListener('click', () => onUnitSelect(uid, u, st));
+    // ISSUE-5: Only attach click listener for ACTIVE units
+    if (isActive) {
+      card.addEventListener('click', () => onUnitSelect(uid, u, st));
+    }
     list.appendChild(card);
   });
 
@@ -1103,14 +1280,31 @@ function renderUnits() {
 
 function onMapMouseMove(e) {
   const rect = canvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
-  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
-  const scaleX = canvas.width / 900, scaleY = canvas.height / 600;
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = canvas.width / dpr;
+  const H    = canvas.height / dpr;
+
+  // Mouse in logical canvas pixels
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top)  * (H / rect.height);
+
+  // Inline centering math — must match drawMap exactly
+  const _pos = Object.values(REGION_POS);
+  const minX = Math.min(..._pos.map(p=>p.x)), maxX = Math.max(..._pos.map(p=>p.x));
+  const minY = Math.min(..._pos.map(p=>p.y)), maxY = Math.max(..._pos.map(p=>p.y));
+  const PAD  = 56;
+  const scale   = Math.min((W-PAD*2)/(maxX-minX), (H-PAD*2)/(maxY-minY));
+  const offsetX = (W-(maxX-minX)*scale)/2 - minX*scale;
+  const offsetY = (H-(maxY-minY)*scale)/2 - minY*scale;
+
+  // Convert to REGION_POS coordinate space
+  const lx = mx - offsetX, ly = my - offsetY;
 
   let hit = null;
+  const HIT_R = 20;
   for (const [id, pos] of Object.entries(REGION_POS)) {
-    const dx = mx - pos.x * scaleX, dy = my - pos.y * scaleY;
-    if (Math.sqrt(dx * dx + dy * dy) < 18) { hit = id; break; }
+    const dx = lx - pos.x*scale, dy = ly - pos.y*scale;
+    if (Math.sqrt(dx*dx + dy*dy) < HIT_R) { hit = id; break; }
   }
 
   if (hit !== state.hoveredRegion) {
@@ -1148,9 +1342,12 @@ function onMapClick(e) {
 }
 
 function onUnitSelect(uid, u, st) {
-  const status = st || (u.status || 'ACTIVE').toUpperCase();
+  // Hard guard: this function should never be called for non-active units because
+  // renderUnits skips attaching the click listener. This is a double-safety net.
+  const status = st || (u?.status || 'ACTIVE').toUpperCase();
   if (status !== 'ACTIVE') {
-    showToast(`${unitName(uid)} — ${status === 'DESTROYED' ? 'Yok edildi' : 'Yeniden doğuyor'}, emir verilemez`, 'error');
+    // Dead/respawning unit — silently ignore. The card is visually disabled so
+    // the player already sees feedback; a toast here would be confusing.
     return;
   }
   state.selectedUnit = uid;
@@ -1351,27 +1548,46 @@ function renderRouteStep() {
   const hint = $('route-chain-hint');
   if (!grid) return;
 
+  // Only show paths that leave the current region (destinations)
   const stepPaths = currentRegion
     ? PATHS.filter(p => p.from === currentRegion || p.to === currentRegion)
     : PATHS;
 
+  const currentName = currentRegion ? (REGION_META[currentRegion]?.name || currentRegion) : '?';
+  const stepNum = (state.selectedRoute?.length || 0) + 1;
+
   if (hint) {
-    const regionName = currentRegion ? (REGION_META[currentRegion]?.name || currentRegion) : '?';
-    hint.innerHTML = `Konum: <strong>${regionName}</strong> — sonraki adımı seç:`;
+    hint.innerHTML =
+      `<span class="route-step-num">${stepNum}. Adım</span> ` +
+      `<span class="route-step-from">${currentName}</span> konumundan ` +
+      `<strong>nereye gidilsin?</strong>`;
   }
 
   const pd = state.paths;
+  if (stepPaths.length === 0) {
+    grid.innerHTML = '<span class="route-dead-end">⛔ Bu konumdan devam edilecek yol yok.</span>';
+    return;
+  }
+
   grid.innerHTML = stepPaths.map(p => {
-    const fLabel = REGION_META[p.from]?.name || p.from;
-    const tLabel = REGION_META[p.to]?.name || p.to;
-    const dest = p.from === currentRegion ? tLabel : fLabel;
+    const destId = p.from === currentRegion ? p.to : p.from;
+    const destName = REGION_META[destId]?.name || destId;
     const pstate = pd[p.id] || {};
-    const tag = pstate.status === 'BLOCKED' ? ' 🚫' : pstate.status === 'THREATENED' ? ' ⚠️' : pstate.surveillanceLevel > 0 ? ` 🔴×${pstate.surveillanceLevel}` : '';
+    let statusPill = '';
+    if (pstate.status === 'BLOCKED')
+      statusPill = '<span class="route-pill route-pill--blocked">🚫 KAPALI</span>';
+    else if (pstate.status === 'THREATENED')
+      statusPill = '<span class="route-pill route-pill--threatened">⚠️ TEHLİKELİ</span>';
+    else if (pstate.status === 'TEMPORARILY_OPEN')
+      statusPill = '<span class="route-pill route-pill--open">✨ GEÇİCİ AÇIK</span>';
+    else if ((pstate.surveillanceLevel || 0) > 0)
+      statusPill = `<span class="route-pill route-pill--surv">${'🔴'.repeat(pstate.surveillanceLevel)} GÖZETİM</span>`;
+
     return `<button class="path-chip" data-pid="${p.id}" data-from="${p.from}" data-to="${p.to}" onclick="addRouteStep(this)">
-      ${fLabel} → ${tLabel}${tag}
-      <span style="color:var(--light-blue);font-size:0.6rem">→ ${dest}</span>
+      <span class="path-chip__dest">→ ${destName}</span>
+      ${statusPill}
     </button>`;
-  }).join('') || '<span style="color:#f87171;font-size:0.72rem">⚠️ Bu konumdan devam edilecek yol bulunamadı.</span>';
+  }).join('');
 }
 
 function addRouteStep(el) {
@@ -1524,15 +1740,30 @@ function _refreshRouteSelected() {
   const selDiv = $('route-selected');
   if (!selDiv) return;
   if (!state.selectedRoute || state.selectedRoute.length === 0) {
-    selDiv.innerHTML = '<span style="color:#4a4060;font-size:0.68rem">Henüz yol seçilmedi...</span>';
+    selDiv.innerHTML = '<span class="route-empty">Henüz yol seçilmedi — yukarıdan bir hedef seçin</span>';
     return;
   }
-  selDiv.innerHTML = state.selectedRoute.map((p, i) => {
-    const ph = PATHS.find(x => x.id === p);
-    const lbl = ph ? (REGION_META[ph.from]?.name || ph.from) + ' > ' + (REGION_META[ph.to]?.name || ph.to) : p;
-    return '<span class="route-tag">' + (i + 1) + '. ' + lbl + '</span>';
+
+  // Build a region chain: start → r1 → r2 → ...
+  const baseRegion = state.selectedUnitData?.region ||
+    (state.selectedUnit === 'ring-bearer' ? (state.ringBearerRegion || 'the-shire') : null);
+  let chain = [baseRegion];
+  let cur = baseRegion;
+  for (const pid of state.selectedRoute) {
+    const p = PATHS.find(x => x.id === pid);
+    if (p) { cur = (p.from === cur) ? p.to : p.from; chain.push(cur); }
+  }
+
+  const labels = chain.map((rid, i) => {
+    const name = REGION_META[rid]?.name || rid || '?';
+    const isLast = i === chain.length - 1;
+    if (i === 0) return `<span class="route-crumb route-crumb--start">📍 ${name}</span>`;
+    return `<span class="route-crumb__arrow">→</span><span class="route-crumb ${isLast ? 'route-crumb--end' : ''}">` +
+      `<span class="route-crumb__num">${i}</span>${name}</span>`;
   }).join('');
-  selDiv.innerHTML += '<button class="btn-undo" onclick="undoRouteStep()">Geri al</button>';
+
+  selDiv.innerHTML = `<div class="route-chain">${labels}</div>` +
+    `<button class="btn-undo" onclick="undoRouteStep()" title="Son adımı geri al">↩ Geri</button>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1605,6 +1836,10 @@ function resetGame() {
   clearInterval(state.timerInterval);
   clearInterval(_timerIntervalId);
   if (_mapAnimHandle) { cancelAnimationFrame(_mapAnimHandle); _mapAnimHandle = null; }
+  // BUG-1 FIX: clear log dedup set on game reset so fresh logs can appear
+  state._logDedup = new Set();
+  // ISSUE-4 FIX: reset initial-snapshot flag so the log is cleared again on next connect
+  state._initialSnapshotSeen = false;
   Object.assign(state, {
     connected: false, gamePhase: 'LOBBY', turn: 1,
     units: {}, regions: {}, paths: {},

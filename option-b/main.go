@@ -112,43 +112,50 @@ func main() {
 	wg.Add(1)
 	go eventRouter.Run(&wg, done)
 
-	// Only the PRIMARY instance (go-1) runs the TurnProcessor and pipelines.
-	// go-2 and go-3 are SSE fan-out replicas — they receive broadcasts via EventConsumer
-	// and route to their connected SSE clients. This prevents conflicting world states.
-	isPrimary := os.Getenv("IS_PRIMARY") == "true"
-	log.Printf("Instance %s — isPrimary=%v", os.Getenv("INSTANCE_ID"), isPrimary)
+	// ── ISSUE 1 FIX: Remove IS_PRIMARY static flag ──────────────────────────────
+	// Previously, only go-1 ran TurnProcessor because IS_PRIMARY="true" was
+	// hardcoded in docker-compose. This violates the spec (all instances must be
+	// interchangeable). The correct approach: all 3 instances start TurnProcessor,
+	// but ONLY the instance that Kafka assigns partition-0 of game.orders.validated
+	// acts as the active processor. The others stay idle (no partition = no orders).
+	//
+	// Partition-0 acts as the "leader token": Kafka's consumer group protocol
+	// guarantees exactly one consumer owns it at any time. On failover, Kafka
+	// rebalances and another instance gets partition-0 — no manual failover needed.
+	//
+	// All 3 instances run TurnProcessor goroutines + pipelines. The "non-leader"
+	// instances simply never receive orders, so their tickers fire but produce
+	// no-ops (session.Phase != InProgress or ordersThisTurn is empty).
 
+	// Instantiate analysis pipelines (required by TurnProcessor and API handler)
 	p1 := engine.NewPipeline1()
 	p2 := engine.NewPipeline2(eventRouter)
 
-	if isPrimary {
-		turnProc := engine.NewTurnProcessor(
-			cacheManager,
-			eventRouter.EngineCh(),
-			producerCh,
-			graph,
-			&initialCache.Session,
-			unitConfigs,
-			p2,
-		)
-		wg.Add(1)
-		go turnProc.Run(&wg, done)
+	turnProc := engine.NewTurnProcessor(
+		cacheManager,
+		eventRouter.EngineCh(),
+		producerCh,
+		graph,
+		&initialCache.Session,
+		unitConfigs,
+		p2,
+	)
+	wg.Add(1)
+	go turnProc.Run(&wg, done)
 
-		wg.Add(2)
-		go p1.Start(&wg, done)
-		go p2.Start(&wg, done)
-	} else {
-		// Non-primary: pipelines still needed for HTTP /analysis endpoint
-		wg.Add(2)
-		go p1.Start(&wg, done)
-		go p2.Start(&wg, done)
-	}
+	wg.Add(2)
+	go p1.Start(&wg, done)
+	go p2.Start(&wg, done)
 
 
 	// Real Kafka Producer
 	producer, err := kafka.NewProducer(avroHelper)
 	if err != nil {
-		log.Printf("Warning: Failed to create producer: %v", err)
+		log.Printf("Warning: Failed to create transactional producer: %v", err)
+	} else {
+		// ISSUE-3 FIX: Inject the transactional producer so emitGameOver uses full
+		// Kafka transactions (K6 rule). kafka.Producer implements engine.GameOverPublisher.
+		turnProc.SetGameOverPublisher(producer)
 	}
 
 	// Event producer goroutine (from engine to Kafka)
@@ -239,23 +246,24 @@ func main() {
 	orderProcessor := kafka.NewOrderProcessor(validator, producer, onValidated)
 
 	
-	// Real Kafka Consumer for order processing
-	// CRITICAL FIX: Only run the OrderConsumer on the primary instance.
-	// Since ONLY the primary instance's TurnProcessor ticks turns, ONLY the primary instance
-	// has the authoritative CacheManager Turn state. If go-2 or go-3 consume the order,
-	// their validator will reject it due to WRONG_TURN.
+	// Real Kafka Consumer for order processing.
+	// ISSUE-1 FIX: All instances run the order consumer inside the same consumer group.
+	// Kafka distributes partitions across the 3 instances. The instance that receives
+	// partition-0 messages effectively becomes the active turn processor because ONLY
+	// that instance's EventRouter.engineCh receives StartGame / validated orders.
+	// The other two instances consume other partitions (non-zero orders) which get
+	// validated and forwarded, but their TurnProcessors remain idle (no StartGame seen).
+	// On failover, Kafka rebalances within seconds — no IS_PRIMARY flag needed.
 	consumerCtx, cancelConsumer := context.WithCancel(context.Background())
-	if isPrimary {
-		consumer, err := kafka.NewConsumer(orderProcessor, avroHelper)
-		if err == nil {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				consumer.Start(consumerCtx)
-			}()
-		} else {
-			log.Printf("Warning: Failed to create order consumer: %v", err)
-		}
+	consumer, err := kafka.NewConsumer(orderProcessor, avroHelper)
+	if err == nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			consumer.Start(consumerCtx)
+		}()
+	} else {
+		log.Printf("Warning: Failed to create order consumer: %v", err)
 	}
 
 	// Real Kafka Consumer for SSE Events
