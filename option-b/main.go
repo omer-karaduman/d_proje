@@ -102,9 +102,9 @@ func main() {
 	if err == nil {
 		recoveredState, _ := recoveryConsumer.RecoverState()
 		if recoveredState != nil {
-			// Merge static config back into recovered state
 			recoveredState.UnitConfigs = unitConfigs
 			initialCache = *recoveredState
+			session = &initialCache.Session
 		}
 	} else {
 		log.Printf("Warning: Could not create recovery consumer: %v", err)
@@ -147,7 +147,7 @@ func main() {
 		eventRouter.EngineCh(),
 		producerCh,
 		graph,
-		&initialCache.Session,
+		session, // &initialCache.Session yerine
 		unitConfigs,
 		p2,
 	)
@@ -292,7 +292,7 @@ func main() {
 
 	// HTTP API server
 	r := mux.NewRouter()
-	apiHandler := api.NewHandler(cacheManager, eventRouter, p1, p2, kafkaOrderCh, &initialCache.Session)
+	apiHandler := api.NewHandler(cacheManager, eventRouter, p1, p2, kafkaOrderCh, session)
 	apiHandler.RegisterRoutes(r)
 
 	// Serve static UI files

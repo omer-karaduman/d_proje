@@ -54,9 +54,9 @@ func NewProducer(avroHelper *AvroHelper) (*Producer, error) {
 		"max.in.flight.requests.per.connection": 5,
 		// K6 FIX: transactional.id enables exactly-once producer semantics.
 		// Idempotence is automatically enabled when transactional.id is set.
-		"transactional.id":         txnID,
-		"transaction.timeout.ms":   30000, // 30s — longer than max turn duration
-		"enable.idempotence":       true,  // explicit for clarity; implied by txn.id
+		"transactional.id":       txnID,
+		"transaction.timeout.ms": 30000, // 30s — longer than max turn duration
+		"enable.idempotence":     true,  // explicit for clarity; implied by txn.id
 	}
 
 	p, err := kafka.NewProducer(cfg)
@@ -110,6 +110,13 @@ func (p *Producer) Produce(topic string, key string, value interface{}, subject 
 		kafkaKey = []byte(key)
 	}
 
+	// Transactional producer için begin/commit gerekli
+	if p.txnEnabled {
+		if err := p.kp.BeginTransaction(); err != nil {
+			return fmt.Errorf("BeginTransaction failed: %w", err)
+		}
+	}
+
 	err = p.kp.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Key:            kafkaKey,
@@ -117,7 +124,18 @@ func (p *Producer) Produce(topic string, key string, value interface{}, subject 
 		Timestamp:      time.Now(),
 	}, nil)
 	if err != nil {
+		if p.txnEnabled {
+			_ = p.kp.AbortTransaction(nil)
+		}
 		return fmt.Errorf("failed to produce to %s: %w", topic, err)
+	}
+
+	if p.txnEnabled {
+		p.kp.Flush(5000)
+		if err := p.kp.CommitTransaction(nil); err != nil {
+			_ = p.kp.AbortTransaction(nil)
+			return fmt.Errorf("CommitTransaction failed: %w", err)
+		}
 	}
 	return nil
 }
@@ -134,10 +152,10 @@ type TransactionalMessage struct {
 //
 // ISSUE-3 FIX (K6 Rule):
 // This is the correct method for the GameOver event. The sequence is:
-//   1. BeginTransaction()
-//   2. Produce all messages (non-blocking)
-//   3. Flush (wait for all messages to be sent to the broker buffer)
-//   4. CommitTransaction()
+//  1. BeginTransaction()
+//  2. Produce all messages (non-blocking)
+//  3. Flush (wait for all messages to be sent to the broker buffer)
+//  4. CommitTransaction()
 //
 // If any step fails, AbortTransaction() is called, leaving the topics in a
 // clean state. On the next restart, InitTransactions() (called in NewProducer)

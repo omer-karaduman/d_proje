@@ -144,10 +144,17 @@ func (tp *TurnProcessor) Run(wg *sync.WaitGroup, done <-chan struct{}) {
 
 func (tp *TurnProcessor) processStartGame() {
 	state := tp.cache.GetSnapshot()
+
+	// Zaten başladıysa tekrar başlatma
+	if state.Session.Phase == game.InProgress {
+		log.Println("[StartGame] already in progress, ignoring duplicate")
+		return
+	}
+
 	state.Session.Phase = game.InProgress
-	state.Session.MaxTurns = tp.session.MaxTurns         // ← EKLE
-	state.Session.TurnDuration = tp.session.TurnDuration // ← EKLE
-	state.Session.HiddenUntil = tp.session.HiddenUntil   // ← EKLE
+	state.Session.MaxTurns = tp.session.MaxTurns
+	state.Session.TurnDuration = tp.session.TurnDuration
+	state.Session.HiddenUntil = tp.session.HiddenUntil
 	state.TurnStartedAt = time.Now().Unix()
 	tp.cache.Update(state)
 	tp.emitWorldStateSnapshot(state)
